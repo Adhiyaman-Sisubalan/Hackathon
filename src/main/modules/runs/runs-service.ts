@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
-import { ReconciliationWorkspaceSchema, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError, reconcileTrades, type ReconciliationResult } from '../../../domain/reconciliation/reconciliation.js';
 import type { Migration, SqliteDatabase } from '../../adapters/sqlite/database.js';
 
@@ -27,6 +27,10 @@ export class RunsService {
   }
 
   latestSummary(): DashboardSummary | null { return this.database.latestSummary(); }
+
+  listCompletedRuns(): readonly ReconciliationRunSummary[] { return this.database.listCompletedRuns(); }
+
+  workspaceForRun(runId: string): ReconciliationWorkspace | null { return this.database.workspaceForRun(runId); }
 
   run(asOfDate: string, report?: ProgressReporter): ReconciliationWorkspace {
     if (this.active) throw new RunInProgressError();

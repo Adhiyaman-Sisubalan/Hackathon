@@ -7,8 +7,8 @@ const statusLabels: Record<ReconciliationStatus, string> = {
   matched: 'Matched', unmatched: 'Unmatched', 'missing-from-broker': 'Missing from Broker', 'missing-from-ot-murex': 'Missing from OT/MUREX'
 };
 
-export function Results({ workspace }: { workspace: ReconciliationWorkspace }) {
-  const [selected, setSelected] = useState<readonly ReconciliationStatus[]>(reconciliationStatuses);
+export function Results({ workspace, initialSelected = reconciliationStatuses }: { workspace: ReconciliationWorkspace; initialSelected?: readonly ReconciliationStatus[] }) {
+  const [selected, setSelected] = useState<readonly ReconciliationStatus[]>(initialSelected);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { headingRef.current?.focus(); }, []);
   const visible = useMemo(() => workspace.results.filter((result) => selected.includes(result.status)), [workspace.results, selected]);
@@ -18,6 +18,6 @@ export function Results({ workspace }: { workspace: ReconciliationWorkspace }) {
     <p>Run {workspace.runId} · As-of date {workspace.asOfDate}</p>
     <dl className={styles.summary}><div><dt>Total</dt><dd>{workspace.metrics.total}</dd></div><div><dt>Matched</dt><dd>{workspace.metrics.matched}</dd></div><div><dt>Unresolved</dt><dd>{workspace.metrics.unresolved}</dd></div><div><dt>Reconciliation rate</dt><dd>{Math.round(workspace.metrics.reconciliationRate * 100)}%</dd></div></dl>
     <fieldset><legend>Status filters</legend><div className={styles.filters}>{reconciliationStatuses.map((status) => <label key={status}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /> {statusLabels[status]}</label>)}</div></fieldset>
-    <p aria-live="polite">Showing {visible.length} results.</p>
+    <p aria-live="polite">Showing {visible.length} results.{selected.length > 0 && visible.length === 0 && workspace.metrics.unresolved === 0 ? ' All results resolved.' : ''}</p>
   </section>;
 }

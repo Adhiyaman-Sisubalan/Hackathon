@@ -74,4 +74,21 @@ describe('persisted reconciliation runs', () => {
     expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
     database.close();
   });
+
+  it('lists completed runs newest-first and hydrates their exact persisted evidence without reconciling again', () => {
+    let scenarioLookups = 0;
+    const registry: ScenarioRegistry = { find(asOfDate) { scenarioLookups += 1; return reconciliationScenarios.find(asOfDate); } };
+    const { database, runs } = setup(registry);
+    const first = runs.run('2026-08-15');
+    const second = runs.run('2026-08-14');
+
+    expect(runs.listCompletedRuns()).toEqual([
+      { runId: second.runId, asOfDate: second.asOfDate, completedAt: second.completedAt, metrics: second.metrics },
+      { runId: first.runId, asOfDate: first.asOfDate, completedAt: first.completedAt, metrics: first.metrics }
+    ]);
+    expect(runs.workspaceForRun(first.runId)).toEqual(first);
+    expect(scenarioLookups).toBe(2);
+    expect(runs.workspaceForRun('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBeNull();
+    database.close();
+  });
 });

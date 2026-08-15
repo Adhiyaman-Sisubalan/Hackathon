@@ -39,7 +39,11 @@ app.whenReady().then(async () => {
     reconciliation = runs;
   } catch {
     dashboard = { latestSummary: () => { throw new Error('Dashboard bootstrap failed.'); } };
-    reconciliation = { run: () => { throw new Error('Reconciliation bootstrap failed.'); } };
+    reconciliation = {
+      run: () => { throw new Error('Reconciliation bootstrap failed.'); },
+      listCompletedRuns: () => { throw new Error('Reconciliation bootstrap failed.'); },
+      workspaceForRun: () => { throw new Error('Reconciliation bootstrap failed.'); }
+    };
   }
   registerDashboardHandlers(ipcMain, dashboard, (event) => isTrustedRendererSender(event, rendererUrl));
   registerReconciliationHandlers(ipcMain, reconciliation, (event) => isTrustedRendererSender(event, rendererUrl));

@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
-import type { ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
 export interface DatabaseOptions { path: string; }
@@ -82,7 +82,70 @@ export class SqliteDatabase {
     return row ?? null;
   }
 
+  listCompletedRuns(): readonly ReconciliationRunSummary[] {
+    const rows = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
+      total, matched, unresolved, reconciliation_rate AS reconciliationRate
+      FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC`).all() as unknown as RunSummaryRow[];
+    return rows.map((row) => ({ runId: row.runId, asOfDate: row.asOfDate, completedAt: row.completedAt, metrics: {
+      total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate
+    } }));
+  }
+
+  workspaceForRun(runId: string): ReconciliationWorkspace | null {
+    const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
+      total, matched, unresolved, reconciliation_rate AS reconciliationRate
+      FROM runs WHERE id = ? AND status = 'completed'`).get(runId) as unknown as RunSummaryRow | undefined;
+    if (!run) return null;
+    const rows = this.db.prepare(`SELECT result_rowid, status, reason,
+      broker.trade_id AS brokerTradeId, broker.isin AS brokerIsin, broker.buy_sell AS brokerBuySell, broker.currency AS brokerCurrency,
+      broker.settlement_date AS brokerSettlementDate, broker.amount AS brokerAmount, broker.quantity AS brokerQuantity, broker.price AS brokerPrice,
+      ot_murex.trade_id AS otMurexTradeId, ot_murex.isin AS otMurexIsin, ot_murex.buy_sell AS otMurexBuySell, ot_murex.currency AS otMurexCurrency,
+      ot_murex.settlement_date AS otMurexSettlementDate, ot_murex.amount AS otMurexAmount, ot_murex.quantity AS otMurexQuantity, ot_murex.price AS otMurexPrice
+      FROM (SELECT rowid AS result_rowid, * FROM reconciliation_results WHERE run_id = ?) AS results
+      LEFT JOIN source_trades AS broker ON broker.run_id = results.run_id AND broker.source = 'broker' AND broker.trade_id = results.broker_trade_id
+      LEFT JOIN source_trades AS ot_murex ON ot_murex.run_id = results.run_id AND ot_murex.source = 'ot-murex' AND ot_murex.trade_id = results.ot_murex_trade_id
+      ORDER BY result_rowid ASC`).all(runId) as unknown as HydratedResultRow[];
+    return ReconciliationWorkspaceSchema.parse({
+      runId: run.runId, asOfDate: run.asOfDate, completedAt: run.completedAt,
+      metrics: { total: run.total, matched: run.matched, unresolved: run.unresolved, reconciliationRate: run.reconciliationRate },
+      results: rows.map((row) => {
+        const brokerTrade = hydrateTrade(row, 'broker');
+        const otMurexTrade = hydrateTrade(row, 'otMurex');
+        return { id: JSON.stringify([brokerTrade?.tradeId ?? null, otMurexTrade?.tradeId ?? null]), status: row.status, reason: row.reason, brokerTrade, otMurexTrade };
+      })
+    });
+  }
+
   close(): void { this.db.close(); }
+}
+
+interface HydratedResultRow {
+  readonly status: 'matched' | 'unmatched' | 'missing-from-broker' | 'missing-from-ot-murex';
+  readonly reason: 'amount-mismatch' | 'quantity-mismatch' | 'amount-and-quantity-mismatch' | null;
+  readonly brokerTradeId: string | null; readonly brokerIsin: string | null; readonly brokerBuySell: 'buy' | 'sell' | null; readonly brokerCurrency: string | null;
+  readonly brokerSettlementDate: string | null; readonly brokerAmount: string | null; readonly brokerQuantity: string | null; readonly brokerPrice: string | null;
+  readonly otMurexTradeId: string | null; readonly otMurexIsin: string | null; readonly otMurexBuySell: 'buy' | 'sell' | null; readonly otMurexCurrency: string | null;
+  readonly otMurexSettlementDate: string | null; readonly otMurexAmount: string | null; readonly otMurexQuantity: string | null; readonly otMurexPrice: string | null;
+}
+
+interface RunSummaryRow {
+  readonly runId: string;
+  readonly asOfDate: string;
+  readonly completedAt: string;
+  readonly total: number;
+  readonly matched: number;
+  readonly unresolved: number;
+  readonly reconciliationRate: number;
+}
+
+function hydrateTrade(row: HydratedResultRow, prefix: 'broker' | 'otMurex'): Trade | null {
+  const tradeId = row[`${prefix}TradeId`];
+  if (!tradeId) return null;
+  return {
+    source: prefix === 'broker' ? 'broker' : 'ot-murex', tradeId,
+    isin: row[`${prefix}Isin`]!, buySell: row[`${prefix}BuySell`]!, currency: row[`${prefix}Currency`]!,
+    settlementDate: row[`${prefix}SettlementDate`]!, amount: row[`${prefix}Amount`]!, quantity: row[`${prefix}Quantity`]!, price: row[`${prefix}Price`]!
+  };
 }
 
 function tradeRow(runId: string, trade: Trade): [string, string, string, string, string, string, string, string, string, string] {

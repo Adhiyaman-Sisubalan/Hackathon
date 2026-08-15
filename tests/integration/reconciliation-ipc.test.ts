@@ -35,4 +35,18 @@ describe('reconciliation IPC boundary', () => {
     const result = await handler?.({ sender: { send: vi.fn() } }, { version: 1, asOfDate: '2026-08-15' });
     expect(result).toEqual({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The reconciliation could not be saved. Please retry.', retryable: true } });
   });
+
+  it('exposes only typed run-history snapshots and maps a stale workspace to not found', async () => {
+    const handlers = new Map<string, (event: any, payload: unknown) => any>();
+    const workspace = { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 0, unresolved: 1, reconciliationRate: 0 }, results: [] };
+    registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, {
+      run: () => workspace,
+      listCompletedRuns: () => [{ runId: workspace.runId, asOfDate: workspace.asOfDate, completedAt: workspace.completedAt, metrics: workspace.metrics }],
+      workspaceForRun: (runId) => runId === workspace.runId ? workspace : null
+    }, () => true);
+    const event = { sender: { send: vi.fn() } };
+    expect(await handlers.get(ReconciliationChannels.listRuns)?.(event, { version: 1 })).toMatchObject({ ok: true, data: { runs: [{ runId: workspace.runId }] } });
+    expect(await handlers.get(ReconciliationChannels.getWorkspace)?.(event, { version: 1, runId: workspace.runId })).toMatchObject({ ok: true, data: { workspace: { runId: workspace.runId } } });
+    expect(await handlers.get(ReconciliationChannels.getWorkspace)?.(event, { version: 1, runId: '22222222-2222-4222-8222-222222222222' })).toEqual({ ok: false, error: { code: 'RUN_NOT_FOUND', message: 'This run is no longer available.', retryable: true } });
+  });
 });
