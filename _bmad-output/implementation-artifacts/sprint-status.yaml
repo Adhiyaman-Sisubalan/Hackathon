@@ -43,7 +43,7 @@ development_status:
 
   epic-2: in-progress
   2-1-understand-the-run-summary-and-anomaly-context: review
-  2-2-explore-and-filter-reconciliation-results: backlog
+  2-2-explore-and-filter-reconciliation-results: in-progress
   2-3-inspect-and-review-unmatched-results: backlog
   epic-2-retrospective: optional
 

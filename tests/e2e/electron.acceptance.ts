@@ -25,6 +25,10 @@ async function runAcceptance(): Promise<void> {
     await run.click();
     await page.getByRole('heading', { name: 'Results' }).waitFor();
     await page.getByText('Status filters').waitFor();
+    await page.getByRole('table').waitFor();
+    await page.getByRole('button', { name: 'Amount' }).click();
+    await page.getByLabel('Trade ID').check();
+    await page.getByRole('columnheader', { name: 'Trade ID' }).waitFor();
     await page.getByLabel('Reconciliation summary').waitFor();
     await page.getByText('33.3%', { exact: true }).waitFor();
     await page.getByText('66.7%', { exact: true }).waitFor();

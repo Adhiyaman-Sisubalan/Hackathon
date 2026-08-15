@@ -1,0 +1,5 @@
+.status { align-items: center; display: inline-flex; font-weight: 600; gap: var(--space-1); white-space: nowrap; }
+.marker { align-items: center; border: 1px solid currentColor; display: inline-flex; font-size: .75rem; height: 1rem; justify-content: center; line-height: 1; width: 1rem; }
+.matched { color: var(--success); }
+.unmatched { color: var(--warning); }
+.missing-from-broker, .missing-from-ot-murex { color: var(--danger); }

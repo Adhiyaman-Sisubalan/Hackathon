@@ -7,6 +7,7 @@
   --accent: light-dark(#075ea8, #72b7ff);
   --accent-text: light-dark(#ffffff, #061b2f);
   --danger: light-dark(#b42318, #ffb4ab);
+  --success: light-dark(#146c43, #85d8aa);
   --warning: light-dark(#9a5a00, #f2b84b);
   --focus: light-dark(#004f91, #9dceff);
   --radius: .25rem;

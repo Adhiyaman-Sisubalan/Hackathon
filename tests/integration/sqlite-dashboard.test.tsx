@@ -71,6 +71,10 @@ describe('SQLite dashboard foundation', () => {
     const warnings = screen.getAllByRole('status').filter((element) => element.textContent?.includes('Unresolved rate is higher than the seeded baseline.'));
     expect(warnings).toHaveLength(2);
     expect(warnings.every((warning) => warning.textContent?.includes('Current 66.7%; five-run baseline 11.0%'))).toBe(true);
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Counterparty' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy();
+    expect(screen.getByText(/Source values use Broker when present/)).toBeTruthy();
     database.close();
   });
 });
