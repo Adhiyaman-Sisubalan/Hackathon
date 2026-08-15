@@ -1,0 +1,42 @@
+{
+  "name": "reconciliation-desktop",
+  "version": "0.1.0",
+  "description": "Local reconciliation desktop prototype",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "engines": {
+    "node": "24.18.1"
+  },
+  "scripts": {
+    "start": "electron-forge start",
+    "lint": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.tests.json",
+    "test": "vitest run tests/unit tests/integration",
+    "test:e2e": "npm run package && tsx tests/e2e/electron.acceptance.ts",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "demo:reset": "tsx scripts/demo-reset.ts"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/plugin-vite": "7.11.2",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.8",
+    "@types/react-dom": "19.2.4",
+    "@testing-library/react": "16.3.2",
+    "@vitejs/plugin-react": "6.0.5",
+    "electron": "43.4.0",
+    "jsdom": "30.0.1",
+    "playwright": "1.62.1",
+    "tsx": "4.21.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "9.1.2",
+    "exceljs": "4.4.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,26 @@
+# Editorial Prose Review
+
+This document exists to help human implementers build independent parts of the Electron prototype without drifting from its architecture decisions.
+
+**Document size:** 2,848 words.  
+**Style preserved:** terse decision-record format, direct rules, domain capitalization, named technical contracts, and compact tables.  
+**Result:** The prose is strong overall. The following localized edits improve comprehension without changing any decision.
+
+| Pass | Original Text | Revised Text | Changes |
+| --- | --- | --- | --- |
+| prose | **Design Paradigm:** “The renderer is a sandboxed presentation process, preload is a narrow typed boundary, and the main process contains application modules around a pure domain core.” | “The renderer is a sandboxed presentation process, the preload layer is a narrow typed boundary, and the main process contains application modules around a pure domain core.” | Restores parallel construction and identifies preload as a layer. |
+| prose | **AD-3:** “The privileged main-side boundary is the only owner of SQLite and filesystem state; it includes the narrowly tasked report worker created by main.” | “The privileged main-side boundary—including the narrowly tasked report worker created by main—is the only owner of SQLite and filesystem state.” | Removes the ambiguous pronoun “it.” |
+| prose | **AD-5:** “using the PRD key” | “using the Reconciliation key defined in the PRD” | Replaces an imprecise shorthand with the source document’s exact term. |
+| prose | **AD-6:** “a successful command returns the changed DTO or aggregate snapshot, which replaces renderer state.” | “A successful command returns the changed DTO or aggregate snapshot. The renderer replaces its state with that returned value.” | Removes ambiguity about whether “which” refers only to the aggregate snapshot. |
+| prose | **AD-11:** “powered by stable TanStack Table v9” | “powered by the pinned TanStack Table v9 release” | Clarifies that “stable” describes dependency selection rather than table behavior. |
+| prose | **AD-19:** “plus optional selected Run ID” | “plus an optional selected Run ID” | Adds the missing article. |
+| prose | **AD-21:** “Before acting, main reloads authoritative persisted state and applies `reviewRequired(status) = status === unmatched`, `commentAllowed(status) = status !== matched`, Broker Preview = the chosen Broker's unmatched Results only, and Report Save = every review-required Result is reviewed. `result.review.v1` means idempotent `reviewed = true`, never toggle.” | “Before executing an eligible command, main reloads the authoritative persisted state and applies these rules: `reviewRequired(status) = status === unmatched`; `commentAllowed(status) = status !== matched`; Broker Preview includes only the selected Broker’s unmatched Results; and Report Save requires every review-required Result to be reviewed. `result.review.v1` sets `reviewed = true` idempotently; it never toggles the value.” | Replaces vague “acting,” makes the mixed equation/prose list parallel, and clarifies the idempotency sentence. |
+| prose | **AD-22:** “Fewer than five returns `insufficient-history`.” | “If fewer than five seeded historical Runs exist, return `insufficient-history`.” | Supplies the missing subject and makes the condition explicit. |
+| prose | **AD-24:** “forced-colors maps essential UI to system colors” | “forced-colors mode maps essential UI to system colors” | Fixes the grammatical subject without changing the accessibility contract. |
+| prose | **AD-25:** “Explicit constrained-width inspector open moves focus to its heading and close restores the invoker.” | “Explicitly opening the constrained-width inspector moves focus to its heading; closing it restores focus to the invoker.” | Replaces compressed noun phrases with clear actions and adds the missing object after “restores.” |
+| prose | **AD-28:** “constructs immutable `RunReportV1`” | “constructs an immutable `RunReportV1`” | Adds the missing article. |
+| prose | **AD-29:** “Fixture/source Trade IDs match ASCII `[A-Za-z0-9_-]+`, compare by ascending bytewise ASCII order, and are unique per source within a Run” | “Fixture and source Trade IDs match `[A-Za-z0-9_-]+`, are compared in ascending bytewise ASCII order, and are unique per source within a Run” | Fixes parallel verb agreement and removes the slash construction. |
+| prose | **Consistency Conventions — Decimals:** “Canonical strings with no exponent notation, leading plus, redundant leading zero, or redundant trailing fractional zero.” | “Canonical strings must not use exponent notation, a leading plus sign, redundant leading zeros, or redundant trailing fractional zeros.” | Makes every prohibited form read unambiguously as a prohibition. |
+| prose | **Stack:** “Electron Forge's Vite plugin and Node's SQLite API are accepted prototype risks and remain pinned behind build and repository boundaries.” | “Electron Forge’s Vite plugin and Node’s SQLite API are accepted prototype risks. Their versions remain pinned, and their implementations remain isolated behind build and repository boundaries.” | Separates version pinning from implementation isolation and removes the unclear phrase “pinned behind.” |
+
+No other wording changes are necessary for this prose pass.

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reconciliation — Dashboard</title>
+  <style>
+    /* Governing contracts: DESIGN.md — Brand & Style, Colors, Typography, Layout & Spacing, Components.dashboard/summary-strip/status-treatment/primary-action; EXPERIENCE.md — Foundation, Information Architecture, Component Patterns.dashboard/summary-strip, State Patterns, Key Flows. */
+    :root { color-scheme: light dark; --canvas:#F7F8FA; --surface:#FFFFFF; --raised:#F1F5F9; --text:#111827; --muted:#475569; --border:#64748B; --accent:#0B5CAD; --accent-fg:#FFFFFF; --focus:#0B5CAD; --success:#166534; --warning:#9A6700; --danger:#B42318; --notice-bg:#FFF7E6; --notice-border:#E6B450; --selected:#EAF3FC; }
+    @media (prefers-color-scheme: dark) { :root { --canvas:#111827; --surface:#182230; --raised:#1F2937; --text:#F9FAFB; --muted:#CBD5E1; --border:#94A3B8; --accent:#6CB6FF; --accent-fg:#0B1F33; --focus:#93C5FD; --success:#4ADE80; --warning:#F6C453; --danger:#F87171; --notice-bg:#312A17; --notice-border:#8A6923; --selected:#15304A; } }
+    @media (forced-colors: active) { * { forced-color-adjust:auto; } }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:1024px; background:var(--canvas); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; font-size:14px; line-height:20px; }
+    button, input { font:inherit; }
+    .app { min-height:100vh; display:grid; grid-template-columns:232px minmax(0,1fr); }
+    .sidebar { padding:18px 14px; border-right:1px solid var(--border); background:var(--surface); }
+    .sidebar-brand { display:flex; align-items:center; gap:10px; padding:6px 8px 26px; font-weight:650; }
+    .nav-label { padding:0 10px 8px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.08em; }
+    .nav-item { display:flex; align-items:center; gap:10px; width:100%; padding:10px; border:0; border-radius:8px; background:transparent; color:var(--muted); text-align:left; font-weight:550; }
+    .nav-item + .nav-item { margin-top:3px; }.nav-item.active { background:var(--selected); color:var(--accent); }.nav-icon { width:18px; text-align:center; }
+    .sidebar-foot { position:fixed; bottom:18px; left:14px; color:var(--muted); font-size:12px; }
+    .workspace { min-width:0; padding:0 28px 28px; }
+    .topbar { height:64px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); margin:0 -28px 24px; padding:0 28px; }
+    .brand { display:flex; align-items:center; gap:12px; font-size:16px; font-weight:600; letter-spacing:-.01em; }
+    .mark { width:28px; height:28px; display:grid; place-items:center; border-radius:8px; background:var(--accent); color:var(--accent-fg); font-weight:700; }
+    .mode { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+    .mode-dot { width:8px; height:8px; border-radius:50%; background:var(--success); }
+    h1 { font-size:28px; line-height:34px; letter-spacing:-.01em; margin:0; font-weight:600; }
+    h2 { margin:0; font-size:20px; line-height:26px; font-weight:600; letter-spacing:-.01em; }
+    .eyebrow, .metric-label, label { color:var(--muted); font-size:12px; line-height:16px; font-weight:500; }
+    .hero { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:20px; }
+    .hero p { color:var(--muted); margin:6px 0 0; }
+    .primary { border:1px solid var(--accent); border-radius:8px; background:var(--accent); color:var(--accent-fg); min-height:40px; padding:0 16px; font-weight:600; box-shadow:none; }
+    .primary:focus-visible, button:focus-visible, input:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+    .section { border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+    .summary { display:grid; grid-template-columns:1.2fr repeat(4,1fr); margin-bottom:16px; overflow:hidden; }
+    .metric { padding:16px; border-right:1px solid var(--border); min-height:106px; }
+    .metric:last-child { border-right:0; }
+    .metric-value { margin-top:8px; font-size:28px; line-height:34px; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+    .metric-value.success { color:var(--success); }
+    .metric-value.warning { color:var(--warning); }
+    .metric-detail { margin-top:4px; color:var(--muted); font-size:12px; }
+    .warning { display:grid; grid-template-columns:24px 1fr auto; gap:12px; align-items:center; padding:14px 16px; border:1px solid var(--notice-border); border-radius:12px; background:var(--notice-bg); color:var(--text); }
+    .warning-icon { color:var(--warning); font-size:18px; font-weight:700; text-align:center; }
+    .warning strong { display:block; font-size:14px; font-weight:600; }
+    .warning p { margin:2px 0 0; color:var(--muted); font-size:12px; }
+    .warning .status { color:var(--warning); font-size:12px; font-weight:600; white-space:nowrap; }
+    .lower { display:grid; grid-template-columns:1.4fr .86fr; gap:16px; margin-top:16px; }
+    .panel { padding:20px; }
+    .panel-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    .panel-header p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    .run { display:grid; grid-template-columns:1fr auto; align-items:end; gap:12px; padding:16px; border:1px solid var(--border); border-radius:8px; background:var(--raised); }
+    input { width:100%; height:40px; margin-top:6px; padding:0 10px; color:var(--text); border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+    .secondary { min-height:40px; padding:0 14px; color:var(--text); border:1px solid var(--border); border-radius:8px; background:var(--surface); font-weight:500; }
+    .timeline { list-style:none; padding:0; margin:0; }
+    .timeline li { display:grid; grid-template-columns:10px 1fr auto; gap:10px; align-items:center; padding:11px 0; border-bottom:1px solid var(--border); }
+    .timeline li:last-child { border-bottom:0; }
+    .timeline-dot { width:8px; height:8px; border-radius:50%; background:var(--success); }
+    .timeline strong { display:block; font-size:13px; }
+    .timeline span { color:var(--muted); font-size:12px; }
+    .rate { font-variant-numeric:tabular-nums; color:var(--success); font-size:12px; font-weight:600; }
+    .footer { display:flex; justify-content:space-between; gap:16px; padding-top:20px; color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+  <main class="app" aria-label="Reconciliation dashboard">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="sidebar-brand"><span class="mark" aria-hidden="true">R</span> Reconciliation</div>
+      <div class="nav-label">WORKSPACE</div>
+      <button class="nav-item active" type="button"><span class="nav-icon">▦</span>Overview</button>
+      <button class="nav-item" type="button"><span class="nav-icon">≡</span>Reconciliation runs</button>
+      <button class="nav-item" type="button"><span class="nav-icon">⌕</span>Exceptions</button>
+      <div class="sidebar-foot">Hackathon prototype</div>
+    </aside>
+    <div class="workspace">
+    <header class="topbar">
+      <div class="brand">Overview</div>
+      <div class="mode"><span class="mode-dot" aria-hidden="true"></span> Local demo data · System theme</div>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <div class="eyebrow">DAILY OPERATIONS · 15 AUG 2026</div>
+        <h1 id="page-title">Reconciliation workspace</h1>
+        <p>Latest run is ready. 137 items require review.</p>
+      </div>
+    </section>
+
+    <section class="section summary" aria-label="Latest reconciliation summary">
+      <div class="metric">
+        <div class="metric-label">LATEST RUN</div>
+        <div class="metric-value">15 Aug</div>
+        <div class="metric-detail">Completed at 09:42</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">TOTAL TRADES</div>
+        <div class="metric-value">1,248</div>
+        <div class="metric-detail">Broker and OT/MUREX</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">MATCHED</div>
+        <div class="metric-value success">1,111</div>
+        <div class="metric-detail">89.0% of all trades</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">UNRESOLVED</div>
+        <div class="metric-value warning">137</div>
+        <div class="metric-detail">Needs human review</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">RECONCILIATION RATE</div>
+        <div class="metric-value">89.0%</div>
+        <div class="metric-detail">Latest completed run</div>
+      </div>
+    </section>
+
+    <aside class="warning" aria-label="Non-blocking anomaly warning">
+      <div class="warning-icon" aria-hidden="true">!</div>
+      <div><strong>Unresolved activity is higher than usual</strong><p>Today’s unresolved rate is 11%; the recent baseline is 2%.</p></div>
+      <span class="status">Review recommended</span>
+    </aside>
+
+    <div class="lower">
+      <section class="section panel" aria-labelledby="start-heading">
+        <div class="panel-header"><div><h2 id="start-heading">Start today’s reconciliation</h2><p>Use seeded broker and OT/MUREX data for this prototype run.</p></div></div>
+        <form class="run">
+          <div><label for="as-of">As-of date <span aria-hidden="true">*</span></label><input id="as-of" type="text" value="15 Aug 2026" aria-describedby="as-of-help"><div id="as-of-help" class="metric-detail">Required before a run can start.</div></div>
+          <button class="primary" type="button">Run reconciliation</button>
+        </form>
+      </section>
+      <section class="section panel" aria-labelledby="recent-heading">
+        <div class="panel-header"><div><h2 id="recent-heading">Today’s queue</h2><p>Next actions for the latest run.</p></div></div>
+        <ul class="timeline">
+          <li><span class="timeline-dot" aria-hidden="true"></span><div><strong>Review unresolved trades</strong><span>137 records awaiting review</span></div><span class="rate">Open</span></li>
+          <li><span class="timeline-dot" aria-hidden="true"></span><div><strong>Prepare broker follow-ups</strong><span>Broker details are ready in the results workspace</span></div><span class="rate">Ready</span></li>
+          <li><span class="timeline-dot" aria-hidden="true"></span><div><strong>Save reconciliation report</strong><span>Available after required review is complete</span></div><span class="rate">Pending</span></li>
+        </ul>
+      </section>
+    </div>
+    <footer class="footer"><span>All inputs are mock data for the hackathon prototype.</span><span>System theme enabled</span></footer>
+    </div>
+  </main>
+</body>
+</html>
