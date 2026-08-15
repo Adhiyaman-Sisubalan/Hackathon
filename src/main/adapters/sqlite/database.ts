@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
+import type { ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
 export interface DatabaseOptions { path: string; }
 export interface Migration { version: number; sql: string; }
@@ -43,6 +45,29 @@ export class SqliteDatabase {
     }
   }
 
+  persistRun(workspace: ReconciliationWorkspace): void {
+    this.transaction(() => {
+      const metrics = workspace.metrics;
+      this.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate)
+        VALUES (?, 'completed', ?, ?, ?, ?, ?, ?)`).run(workspace.runId, workspace.completedAt, workspace.asOfDate, metrics.total, metrics.matched, metrics.unresolved, metrics.reconciliationRate);
+      const insertTrade = this.db.prepare(`INSERT INTO source_trades (run_id, source, trade_id, isin, buy_sell, currency, settlement_date, amount, quantity, price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const seen = new Set<string>();
+      for (const result of workspace.results) {
+        for (const trade of [result.brokerTrade, result.otMurexTrade]) {
+          if (!trade || seen.has(`${trade.source}\u0000${trade.tradeId}`)) continue;
+          seen.add(`${trade.source}\u0000${trade.tradeId}`);
+          insertTrade.run(...tradeRow(workspace.runId, trade));
+        }
+      }
+      const insertResult = this.db.prepare(`INSERT INTO reconciliation_results (id, run_id, status, reason, broker_trade_id, ot_murex_trade_id)
+        VALUES (?, ?, ?, ?, ?, ?)`);
+      for (const result of workspace.results) {
+        insertResult.run(`${workspace.runId}:${result.id}`, workspace.runId, result.status, result.reason, result.brokerTrade?.tradeId ?? null, result.otMurexTrade?.tradeId ?? null);
+      }
+    });
+  }
+
   hasSeed(version: string): boolean {
     return Boolean(this.db.prepare('SELECT 1 FROM seed_versions WHERE version = ?').get(version));
   }
@@ -58,4 +83,8 @@ export class SqliteDatabase {
   }
 
   close(): void { this.db.close(); }
+}
+
+function tradeRow(runId: string, trade: Trade): [string, string, string, string, string, string, string, string, string, string] {
+  return [runId, trade.source, trade.tradeId, trade.isin, trade.buySell, trade.currency, trade.settlementDate, trade.amount, trade.quantity, trade.price];
 }

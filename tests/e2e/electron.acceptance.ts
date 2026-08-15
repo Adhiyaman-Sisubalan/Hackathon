@@ -20,10 +20,11 @@ async function runAcceptance(): Promise<void> {
     assert.equal(await page.evaluate(() => document.visibilityState), 'visible');
     await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
     await page.getByText('No reconciliation has been completed yet.').waitFor();
-    const start = page.getByRole('button', { name: 'Start reconciliation' });
-    await start.waitFor();
-    await start.click();
-    await page.getByText(/becomes available in Story 1.2/).waitFor();
+    const run = page.getByRole('button', { name: 'Run reconciliation' });
+    await run.waitFor();
+    await run.click();
+    await page.getByRole('heading', { name: 'Results' }).waitFor();
+    await page.getByText('Status filters').waitFor();
 
     const runs = page.getByRole('button', { name: 'Reconciliation Runs' });
     await runs.focus();
@@ -42,7 +43,7 @@ async function runAcceptance(): Promise<void> {
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
     assert.equal(await overview.getAttribute('aria-current'), 'page');
-    console.log('Playwright Electron acceptance passed: Dashboard launch and keyboard navigation.');
+    console.log('Playwright Electron acceptance passed: seeded run, Results handoff, and keyboard navigation.');
   } finally {
     await application?.close();
     rmSync(userData, { recursive: true, force: true });

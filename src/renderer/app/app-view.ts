@@ -1,4 +1,4 @@
-export type AppView = 'overview' | 'runs' | 'exceptions';
+export type AppView = 'overview' | 'runs' | 'exceptions' | 'results';
 
 export const appViews: readonly { id: AppView; label: string }[] = [
   { id: 'overview', label: 'Overview' },

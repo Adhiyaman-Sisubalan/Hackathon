@@ -9,4 +9,8 @@
 .summary dd { font-size: 1.25rem; font-weight: 700; margin: var(--space-1) 0 0; }
 .error { border-left: 3px solid var(--danger); padding-left: var(--space-3); }
 .note { color: var(--text-muted); margin: 0; }
+.runForm { display: grid; gap: var(--space-2); max-width: 30rem; }
+.controls { display: flex; gap: var(--space-2); align-items: center; }
+.controls input { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); padding: var(--space-2); }
+.controls input[aria-invalid='true'] { border-color: var(--danger); }
 @media (max-width: 640px) { .heading { align-items: start; flex-direction: column; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

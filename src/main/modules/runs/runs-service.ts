@@ -1,10 +1,20 @@
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
+import { ReconciliationWorkspaceSchema, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { DuplicateTradeIdError, reconcileTrades, type ReconciliationResult } from '../../../domain/reconciliation/reconciliation.js';
 import type { Migration, SqliteDatabase } from '../../adapters/sqlite/database.js';
 
 export interface SeedFixture { version: string; apply(database: SqliteDatabase): void; }
+export interface Scenario { asOfDate: string; brokerTrades: readonly import('../../../domain/reconciliation/reconciliation.js').Trade[]; otMurexTrades: readonly import('../../../domain/reconciliation/reconciliation.js').Trade[]; }
+export interface ScenarioRegistry { find(asOfDate: string): Scenario | undefined; }
+export interface RunsDependencies { readonly clock: { now(): string }; readonly ids: { next(): string }; readonly scenarios: ScenarioRegistry; }
+export type ProgressReporter = (progress: { runId?: string; asOfDate: string; phase: 'started' | 'completed' | 'failed' }) => void;
+
+export class RunInProgressError extends Error { readonly code = 'RUN_IN_PROGRESS'; constructor() { super('A reconciliation is already running.'); } }
+export class UnsupportedDateError extends Error { readonly code = 'UNAVAILABLE'; constructor() { super('No seeded data for this date.'); } }
 
 export class RunsService {
-  constructor(private readonly database: SqliteDatabase, private readonly fixture: SeedFixture) {}
+  private active = false;
+  constructor(private readonly database: SqliteDatabase, private readonly fixture: SeedFixture, private readonly dependencies?: RunsDependencies) {}
 
   migrate(migrations: readonly Migration[]): void { this.database.migrate(migrations); }
 
@@ -17,4 +27,37 @@ export class RunsService {
   }
 
   latestSummary(): DashboardSummary | null { return this.database.latestSummary(); }
+
+  run(asOfDate: string, report?: ProgressReporter): ReconciliationWorkspace {
+    if (this.active) throw new RunInProgressError();
+    const scenario = this.dependencies?.scenarios.find(asOfDate);
+    if (!scenario || !this.dependencies) throw new UnsupportedDateError();
+    this.active = true;
+    try {
+      notify(report, { asOfDate, phase: 'started' });
+      const results = reconcileTrades(scenario.brokerTrades, scenario.otMurexTrades);
+      const workspace = ReconciliationWorkspaceSchema.parse({
+        runId: this.dependencies.ids.next(), asOfDate, completedAt: this.dependencies.clock.now(), metrics: metricsFor(results), results
+      });
+      this.database.persistRun(workspace);
+      notify(report, { runId: workspace.runId, asOfDate, phase: 'completed' });
+      return workspace;
+    } catch (error) {
+      notify(report, { asOfDate, phase: 'failed' });
+      if (error instanceof DuplicateTradeIdError) throw error;
+      throw error;
+    } finally {
+      this.active = false;
+    }
+  }
+}
+
+function notify(report: ProgressReporter | undefined, progress: Parameters<ProgressReporter>[0]): void {
+  try { report?.(progress); } catch { /* Progress delivery is observational and cannot alter a committed run. */ }
+}
+
+function metricsFor(results: readonly ReconciliationResult[]): ReconciliationWorkspace['metrics'] {
+  const matched = results.filter((result) => result.status === 'matched').length;
+  const total = results.length;
+  return { total, matched, unresolved: total - matched, reconciliationRate: total === 0 ? 1 : matched / total };
 }

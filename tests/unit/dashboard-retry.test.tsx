@@ -12,20 +12,19 @@ describe('dashboard query failure', () => {
     render(<Dashboard api={{ get }} />);
 
     const retry = await screen.findByRole('button', { name: 'Retry dashboard query' });
-    expect(screen.getByRole('button', { name: 'Start reconciliation' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Run reconciliation' })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(retry));
     fireEvent.click(retry);
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/No reconciliation has been completed yet/)).toBeTruthy();
   });
 
-  it('does not offer Retry for a non-retryable failure and keeps start feedback in context', async () => {
+  it('does not offer Retry for a non-retryable failure and keeps the run controls in context', async () => {
     const get = vi.fn().mockResolvedValue({ ok: false as const, error: { code: 'INVALID_REQUEST', message: 'Dashboard access is unavailable.', retryable: false } });
     render(<Dashboard api={{ get }} />);
     await screen.findByRole('alert');
     expect(screen.queryByRole('button', { name: 'Retry dashboard query' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Start reconciliation' }));
-    expect(await screen.findByText(/becomes available in Story 1.2/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Run reconciliation' })).toBeTruthy();
   });
 
   it('renders a safe non-retryable error when the preload dashboard API is unavailable', async () => {
