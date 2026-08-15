@@ -25,6 +25,10 @@ async function runAcceptance(): Promise<void> {
     await run.click();
     await page.getByRole('heading', { name: 'Results' }).waitFor();
     await page.getByText('Status filters').waitFor();
+    await page.getByLabel('Reconciliation summary').waitFor();
+    await page.getByText('33.3%', { exact: true }).waitFor();
+    await page.getByText('66.7%', { exact: true }).waitFor();
+    await page.getByText(/Unresolved rate is higher than the seeded baseline/).waitFor();
 
     const runs = page.getByRole('button', { name: 'Reconciliation Runs' });
     await runs.focus();
@@ -47,7 +51,9 @@ async function runAcceptance(): Promise<void> {
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
     assert.equal(await overview.getAttribute('aria-current'), 'page');
-    console.log('Playwright Electron acceptance passed: seeded run history, latest Exceptions, and keyboard navigation.');
+    await page.getByLabel('Reconciliation summary').waitFor();
+    await page.getByText(/five-run baseline 11.0%/).waitFor();
+    console.log('Playwright Electron acceptance passed: persisted summary, seeded anomaly context, Exceptions, and keyboard navigation.');
   } finally {
     await application?.close();
     rmSync(userData, { recursive: true, force: true });

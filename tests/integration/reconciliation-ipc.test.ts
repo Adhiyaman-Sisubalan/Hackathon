@@ -9,7 +9,7 @@ describe('reconciliation IPC boundary', () => {
     let handler: ((event: any, payload: unknown) => any) | undefined;
     const send = vi.fn();
     registerReconciliationHandlers({ handle: vi.fn((_channel, received) => { handler = received; }) }, {
-      run: (_date, report) => { report({ asOfDate: '2026-08-15', phase: 'started' }); return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 1, unresolved: 0, reconciliationRate: 1 }, results: [] }; }
+      run: (_date, report) => { report({ asOfDate: '2026-08-15', phase: 'started' }); return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 1, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 }, anomaly: { kind: 'normal' as const, currentUnresolvedRate: 0, historyCount: 5 as const, baselineUnresolvedRate: .1 }, results: [] }; }
     }, () => true);
     expect(await handler?.({ sender: { send } }, { version: 1, asOfDate: '2026-08-16' })).toMatchObject({ ok: true });
     expect(send).toHaveBeenCalledWith(ReconciliationChannels.progress, { asOfDate: '2026-08-15', phase: 'started' });
@@ -38,10 +38,10 @@ describe('reconciliation IPC boundary', () => {
 
   it('exposes only typed run-history snapshots and maps a stale workspace to not found', async () => {
     const handlers = new Map<string, (event: any, payload: unknown) => any>();
-    const workspace = { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 0, unresolved: 1, reconciliationRate: 0 }, results: [] };
+    const workspace = { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 0, unresolved: 1, reconciliationRate: 0, unresolvedRate: 1 }, anomaly: { kind: 'warning' as const, currentUnresolvedRate: 1, historyCount: 5 as const, baselineUnresolvedRate: .1 }, results: [] };
     registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, {
       run: () => workspace,
-      listCompletedRuns: () => [{ runId: workspace.runId, asOfDate: workspace.asOfDate, completedAt: workspace.completedAt, metrics: workspace.metrics }],
+      listCompletedRuns: () => [{ runId: workspace.runId, asOfDate: workspace.asOfDate, completedAt: workspace.completedAt, metrics: workspace.metrics, anomaly: workspace.anomaly }],
       workspaceForRun: (runId) => runId === workspace.runId ? workspace : null
     }, () => true);
     const event = { sender: { send: vi.fn() } };

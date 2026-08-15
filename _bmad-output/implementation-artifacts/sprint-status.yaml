@@ -41,8 +41,8 @@ development_status:
   1-3-reopen-runs-and-view-latest-exceptions: in-progress
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-understand-the-run-summary-and-anomaly-context: backlog
+  epic-2: in-progress
+  2-1-understand-the-run-summary-and-anomaly-context: review
   2-2-explore-and-filter-reconciliation-results: backlog
   2-3-inspect-and-review-unmatched-results: backlog
   epic-2-retrospective: optional

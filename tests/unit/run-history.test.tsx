@@ -5,7 +5,7 @@ import { RunHistory } from '../../src/renderer/features/runs/RunHistory.js';
 
 afterEach(cleanup);
 
-const latest = { runId: '22222222-2222-4222-8222-222222222222', asOfDate: '2026-08-15', completedAt: '2026-08-15T12:00:00.000Z', metrics: { total: 2, matched: 1, unresolved: 1, reconciliationRate: .5 } };
+const latest = { runId: '22222222-2222-4222-8222-222222222222', asOfDate: '2026-08-15', completedAt: '2026-08-15T12:00:00.000Z', metrics: { total: 2, matched: 1, unresolved: 1, reconciliationRate: .5, unresolvedRate: .5 }, anomaly: { kind: 'warning' as const, currentUnresolvedRate: .5, historyCount: 5 as const, baselineUnresolvedRate: .1 } };
 const older = { ...latest, runId: '11111111-1111-4111-8111-111111111111', completedAt: '2026-08-14T12:00:00.000Z' };
 const workspace = { ...latest, results: [] };
 

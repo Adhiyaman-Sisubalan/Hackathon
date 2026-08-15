@@ -9,7 +9,8 @@ import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconcili
 import { RunsService, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
 
 const directories: string[] = [];
-const migrations = [1, 2].map((version) => ({ version, sql: readFileSync(`migrations/00${version}-${version === 1 ? 'initial' : 'runs-and-results'}.sql`, 'utf8') }));
+const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql'];
+const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
 function setup(registry: ScenarioRegistry = reconciliationScenarios) {
@@ -19,6 +20,7 @@ function setup(registry: ScenarioRegistry = reconciliationScenarios) {
   const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444'];
   const runs = new RunsService(database, initialSeed, { clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => ids.shift()! }, scenarios: registry });
   runs.migrate(migrations);
+  runs.seed();
   return { database, runs };
 }
 
@@ -27,7 +29,7 @@ describe('persisted reconciliation runs', () => {
     const { database, runs } = setup();
     const thirteenth = runs.run('2026-08-13', () => { throw new Error('renderer closed'); });
     const fourteenth = runs.run('2026-08-14');
-    expect(thirteenth.metrics).toEqual({ total: 1, matched: 1, unresolved: 0, reconciliationRate: 1 });
+    expect(thirteenth.metrics).toEqual({ total: 1, matched: 1, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 });
     expect(fourteenth.results.map((result) => result.status)).toEqual(['unmatched', 'missing-from-ot-murex']);
     expect(database.db.prepare('SELECT count(*) AS count FROM runs').get()).toEqual({ count: 2 });
     database.close();
@@ -37,13 +39,13 @@ describe('persisted reconciliation runs', () => {
     const { database, runs } = setup();
     const first = runs.run('2026-08-15');
     const second = runs.run('2026-08-15');
-    expect(first.metrics).toEqual({ total: 6, matched: 2, unresolved: 4, reconciliationRate: 1 / 3 });
+    expect(first.metrics).toEqual({ total: 6, matched: 2, unresolved: 4, reconciliationRate: 1 / 3, unresolvedRate: 2 / 3 });
     expect(first.results.map((result) => result.status)).toEqual(['matched', 'unmatched', 'matched', 'missing-from-ot-murex', 'missing-from-ot-murex', 'missing-from-broker']);
     expect(second.runId).not.toBe(first.runId);
     expect(database.db.prepare('SELECT count(*) AS count FROM runs').get()).toEqual({ count: 2 });
     expect(database.db.prepare('SELECT count(*) AS count FROM source_trades WHERE run_id = ?').get(first.runId)).toEqual({ count: 9 });
     expect(database.db.prepare('SELECT count(*) AS count FROM reconciliation_results WHERE run_id = ?').get(first.runId)).toEqual({ count: 6 });
-    expect(runs.latestSummary()).toMatchObject({ runId: second.runId, total: 6, matched: 2, unresolved: 4 });
+    expect(runs.latestSummary()).toMatchObject({ runId: second.runId, metrics: { total: 6, matched: 2, unresolved: 4 } });
     database.close();
   });
 
@@ -62,16 +64,21 @@ describe('persisted reconciliation runs', () => {
     duplicateSetup.database.close();
   });
 
-  it('upgrades a v1 database without altering its existing run and assigns its deterministic default as-of date', () => {
+  it('upgrades a v1 database without altering its existing run, backfills its unresolved rate, and exposes authoritative snapshots', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'reconciliation-upgrade-'));
     directories.push(directory);
     const database = new SqliteDatabase({ path: path.join(directory, 'upgrade.sqlite') });
     database.migrate([migrations[0]!]);
-    database.db.prepare(`INSERT INTO runs (id, status, completed_at, total, matched, unresolved, reconciliation_rate) VALUES (?, 'completed', ?, 1, 1, 0, 1)`)
-      .run('99999999-9999-4999-8999-999999999999', '2026-08-15T00:00:00.000Z');
+    const runId = '99999999-9999-4999-8999-999999999999';
+    database.db.prepare(`INSERT INTO runs (id, status, completed_at, total, matched, unresolved, reconciliation_rate) VALUES (?, 'completed', ?, 5, 3, 2, .6)`)
+      .run(runId, '2026-08-15T00:00:00.000Z');
     database.migrate(migrations);
-    expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total FROM runs').get()).toEqual({ id: '99999999-9999-4999-8999-999999999999', asOfDate: '2026-08-15', total: 1 });
-    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
+    expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total, unresolved_rate AS unresolvedRate FROM runs').get()).toEqual({ id: runId, asOfDate: '2026-08-15', total: 5, unresolvedRate: .4 });
+    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 });
+    const runs = new RunsService(database, initialSeed);
+    runs.seed();
+    expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 5, matched: 3, unresolved: 2, reconciliationRate: .6, unresolvedRate: .4 } });
+    expect(runs.workspaceForRun(runId)).toMatchObject({ runId, metrics: { unresolvedRate: .4 } });
     database.close();
   });
 
@@ -83,12 +90,33 @@ describe('persisted reconciliation runs', () => {
     const second = runs.run('2026-08-14');
 
     expect(runs.listCompletedRuns()).toEqual([
-      { runId: second.runId, asOfDate: second.asOfDate, completedAt: second.completedAt, metrics: second.metrics },
-      { runId: first.runId, asOfDate: first.asOfDate, completedAt: first.completedAt, metrics: first.metrics }
+      { runId: second.runId, asOfDate: second.asOfDate, completedAt: second.completedAt, metrics: second.metrics, anomaly: second.anomaly },
+      { runId: first.runId, asOfDate: first.asOfDate, completedAt: first.completedAt, metrics: first.metrics, anomaly: first.anomaly }
     ]);
     expect(runs.workspaceForRun(first.runId)).toEqual(first);
     expect(scenarioLookups).toBe(2);
     expect(runs.workspaceForRun('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBeNull();
+    database.close();
+  });
+
+  it('uses exactly five versioned seeded histories and excludes user runs and reruns from anomaly provenance', () => {
+    const { database, runs } = setup();
+    expect(database.db.prepare('SELECT count(*) AS count FROM seeded_run_history WHERE seed_version = ?').get(initialSeed.version)).toEqual({ count: 5 });
+    const first = runs.run('2026-08-15');
+    const second = runs.run('2026-08-15');
+    expect(first.anomaly).toMatchObject({ kind: 'warning', historyCount: 5 });
+    expect(first.anomaly.baselineUnresolvedRate).toBeCloseTo(.11);
+    expect(second.anomaly).toEqual(first.anomaly);
+    expect(database.db.prepare('SELECT count(*) AS count FROM seeded_run_history WHERE seed_version = ?').get(initialSeed.version)).toEqual({ count: 5 });
+    database.close();
+  });
+
+  it('keeps a persisted run usable with calm insufficient-history context when a seeded-history row is unavailable', () => {
+    const { database, runs } = setup();
+    const run = runs.run('2026-08-15');
+    database.db.prepare('DELETE FROM seeded_run_history WHERE seed_version = ? AND history_key = ?').run(initialSeed.version, 'history-05');
+    expect(runs.latestSummary()).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 4, baselineUnresolvedRate: null } });
+    expect(runs.workspaceForRun(run.runId)).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 4, baselineUnresolvedRate: null } });
     database.close();
   });
 });

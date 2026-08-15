@@ -1,10 +1,21 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
-import { ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { anomalyContextFor, type AnomalyThresholds } from '../../../domain/metrics/reconciliation-metrics.js';
+import { ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
 export interface DatabaseOptions { path: string; }
 export interface Migration { version: number; sql: string; }
+export interface SeededRunHistory {
+  readonly historyKey: string;
+  readonly asOfDate: string;
+  readonly completedAt: string;
+  readonly total: number;
+  readonly matched: number;
+  readonly unresolved: number;
+  readonly reconciliationRate: number;
+  readonly unresolvedRate: number;
+}
 
 export class SqliteDatabase {
   readonly db: DatabaseSync;
@@ -45,11 +56,11 @@ export class SqliteDatabase {
     }
   }
 
-  persistRun(workspace: ReconciliationWorkspace): void {
+  persistRun(workspace: Omit<ReconciliationWorkspace, 'anomaly'>): void {
     this.transaction(() => {
       const metrics = workspace.metrics;
-      this.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate)
-        VALUES (?, 'completed', ?, ?, ?, ?, ?, ?)`).run(workspace.runId, workspace.completedAt, workspace.asOfDate, metrics.total, metrics.matched, metrics.unresolved, metrics.reconciliationRate);
+      this.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
+        VALUES (?, 'completed', ?, ?, ?, ?, ?, ?, ?)`).run(workspace.runId, workspace.completedAt, workspace.asOfDate, metrics.total, metrics.matched, metrics.unresolved, metrics.reconciliationRate, metrics.unresolvedRate);
       const insertTrade = this.db.prepare(`INSERT INTO source_trades (run_id, source, trade_id, isin, buy_sell, currency, settlement_date, amount, quantity, price)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const seen = new Set<string>();
@@ -76,24 +87,34 @@ export class SqliteDatabase {
     this.db.prepare('INSERT INTO seed_versions (version) VALUES (?)').run(version);
   }
 
-  latestSummary(): DashboardSummary | null {
-    const row = this.db.prepare(`SELECT id AS runId, completed_at AS completedAt, total, matched, unresolved,
-      reconciliation_rate AS reconciliationRate FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC LIMIT 1`).get() as DashboardSummary | undefined;
-    return row ?? null;
+  replaceSeededHistory(seedVersion: string, histories: readonly SeededRunHistory[]): void {
+    if (histories.length !== 5 || new Set(histories.map((history) => history.historyKey)).size !== 5) {
+      throw new Error('Seeded reconciliation history must contain exactly five distinct runs.');
+    }
+    this.db.prepare('DELETE FROM seeded_run_history WHERE seed_version = ?').run(seedVersion);
+    const insert = this.db.prepare(`INSERT INTO seeded_run_history (seed_version, history_key, as_of_date, completed_at, total, matched, unresolved, reconciliation_rate, unresolved_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const history of histories) {
+      insert.run(seedVersion, history.historyKey, history.asOfDate, history.completedAt, history.total, history.matched, history.unresolved, history.reconciliationRate, history.unresolvedRate);
+    }
   }
 
-  listCompletedRuns(): readonly ReconciliationRunSummary[] {
+  latestSummary(seedVersion: string, thresholds: AnomalyThresholds): DashboardSummary | null {
+    const row = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt, total, matched, unresolved,
+      reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC LIMIT 1`).get() as unknown as RunSummaryRow | undefined;
+    return row ? this.summarySnapshot(row, seedVersion, thresholds) : null;
+  }
+
+  listCompletedRuns(seedVersion: string, thresholds: AnomalyThresholds): readonly ReconciliationRunSummary[] {
     const rows = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
-      total, matched, unresolved, reconciliation_rate AS reconciliationRate
+      total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC`).all() as unknown as RunSummaryRow[];
-    return rows.map((row) => ({ runId: row.runId, asOfDate: row.asOfDate, completedAt: row.completedAt, metrics: {
-      total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate
-    } }));
+    return rows.map((row) => this.summarySnapshot(row, seedVersion, thresholds));
   }
 
-  workspaceForRun(runId: string): ReconciliationWorkspace | null {
+  workspaceForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
     const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
-      total, matched, unresolved, reconciliation_rate AS reconciliationRate
+      total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE id = ? AND status = 'completed'`).get(runId) as unknown as RunSummaryRow | undefined;
     if (!run) return null;
     const rows = this.db.prepare(`SELECT result_rowid, status, reason,
@@ -106,8 +127,7 @@ export class SqliteDatabase {
       LEFT JOIN source_trades AS ot_murex ON ot_murex.run_id = results.run_id AND ot_murex.source = 'ot-murex' AND ot_murex.trade_id = results.ot_murex_trade_id
       ORDER BY result_rowid ASC`).all(runId) as unknown as HydratedResultRow[];
     return ReconciliationWorkspaceSchema.parse({
-      runId: run.runId, asOfDate: run.asOfDate, completedAt: run.completedAt,
-      metrics: { total: run.total, matched: run.matched, unresolved: run.unresolved, reconciliationRate: run.reconciliationRate },
+      ...this.summarySnapshot(run, seedVersion, thresholds),
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
@@ -117,6 +137,13 @@ export class SqliteDatabase {
   }
 
   close(): void { this.db.close(); }
+
+  private summarySnapshot(row: RunSummaryRow, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationRunSummary {
+    const metrics = { total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate, unresolvedRate: row.unresolvedRate };
+    const historicalRates = this.db.prepare(`SELECT unresolved_rate AS unresolvedRate FROM seeded_run_history
+      WHERE seed_version = ? ORDER BY completed_at ASC, history_key ASC`).all(seedVersion) as unknown as { unresolvedRate: number }[];
+    return ReconciliationRunSummarySchema.parse({ ...row, metrics, anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates.map((history) => history.unresolvedRate), thresholds) });
+  }
 }
 
 interface HydratedResultRow {
@@ -136,6 +163,7 @@ interface RunSummaryRow {
   readonly matched: number;
   readonly unresolved: number;
   readonly reconciliationRate: number;
+  readonly unresolvedRate: number;
 }
 
 function hydrateTrade(row: HydratedResultRow, prefix: 'broker' | 'otMurex'): Trade | null {

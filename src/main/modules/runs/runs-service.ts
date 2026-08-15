@@ -1,5 +1,7 @@
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
-import { ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { reconciliationMetricsFor } from '../../../domain/metrics/reconciliation-metrics.js';
+import { reconciliationBootstrapConfig } from '../../bootstrap/reconciliation-config.js';
+import { ReconciliationRunAggregateSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError, reconcileTrades, type ReconciliationResult } from '../../../domain/reconciliation/reconciliation.js';
 import type { Migration, SqliteDatabase } from '../../adapters/sqlite/database.js';
 
@@ -26,11 +28,11 @@ export class RunsService {
     });
   }
 
-  latestSummary(): DashboardSummary | null { return this.database.latestSummary(); }
+  latestSummary(): DashboardSummary | null { return this.database.latestSummary(this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
 
-  listCompletedRuns(): readonly ReconciliationRunSummary[] { return this.database.listCompletedRuns(); }
+  listCompletedRuns(): readonly ReconciliationRunSummary[] { return this.database.listCompletedRuns(this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
 
-  workspaceForRun(runId: string): ReconciliationWorkspace | null { return this.database.workspaceForRun(runId); }
+  workspaceForRun(runId: string): ReconciliationWorkspace | null { return this.database.workspaceForRun(runId, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
 
   run(asOfDate: string, report?: ProgressReporter): ReconciliationWorkspace {
     if (this.active) throw new RunInProgressError();
@@ -40,10 +42,10 @@ export class RunsService {
     try {
       notify(report, { asOfDate, phase: 'started' });
       const results = reconcileTrades(scenario.brokerTrades, scenario.otMurexTrades);
-      const workspace = ReconciliationWorkspaceSchema.parse({
-        runId: this.dependencies.ids.next(), asOfDate, completedAt: this.dependencies.clock.now(), metrics: metricsFor(results), results
-      });
-      this.database.persistRun(workspace);
+      const aggregate = ReconciliationRunAggregateSchema.parse({ runId: this.dependencies.ids.next(), asOfDate, completedAt: this.dependencies.clock.now(), metrics: metricsFor(results), results });
+      this.database.persistRun(aggregate);
+      const workspace = this.workspaceForRun(aggregate.runId);
+      if (!workspace) throw new Error('Committed reconciliation run cannot be reloaded.');
       notify(report, { runId: workspace.runId, asOfDate, phase: 'completed' });
       return workspace;
     } catch (error) {
@@ -61,7 +63,5 @@ function notify(report: ProgressReporter | undefined, progress: Parameters<Progr
 }
 
 function metricsFor(results: readonly ReconciliationResult[]): ReconciliationWorkspace['metrics'] {
-  const matched = results.filter((result) => result.status === 'matched').length;
-  const total = results.length;
-  return { total, matched, unresolved: total - matched, reconciliationRate: total === 0 ? 1 : matched / total };
+  return reconciliationMetricsFor(results.map((result) => result.status));
 }

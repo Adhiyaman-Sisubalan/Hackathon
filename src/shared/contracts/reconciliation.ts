@@ -10,11 +10,19 @@ export const ReconciliationResultSchema = z.object({
   id: z.string().min(1), status: ReconciliationStatusSchema, reason: z.enum(['amount-mismatch', 'quantity-mismatch', 'amount-and-quantity-mismatch']).nullable(),
   brokerTrade: ReconciliationTradeSchema.nullable(), otMurexTrade: ReconciliationTradeSchema.nullable()
 }).readonly();
-export const ReconciliationMetricsSchema = z.object({ total: z.number().int().nonnegative(), matched: z.number().int().nonnegative(), unresolved: z.number().int().nonnegative(), reconciliationRate: z.number().min(0).max(1) }).readonly();
-export const ReconciliationWorkspaceSchema = z.object({ runId: z.string().uuid(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), completedAt: z.string().datetime(), metrics: ReconciliationMetricsSchema, results: z.array(ReconciliationResultSchema).readonly() }).readonly();
-export const ReconciliationRunSummarySchema = z.object({
+export const ReconciliationMetricsSchema = z.object({ total: z.number().int().nonnegative(), matched: z.number().int().nonnegative(), unresolved: z.number().int().nonnegative(), reconciliationRate: z.number().min(0).max(1), unresolvedRate: z.number().min(0).max(1) }).readonly();
+export const ReconciliationAnomalySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('insufficient-history'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.number().int().nonnegative().max(4), baselineUnresolvedRate: z.null() }).readonly(),
+  z.object({ kind: z.literal('normal'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly(),
+  z.object({ kind: z.literal('warning'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly()
+]);
+const ReconciliationRunIdentitySchema = z.object({
   runId: z.string().uuid(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), completedAt: z.string().datetime(), metrics: ReconciliationMetricsSchema
-}).readonly();
+});
+export const ReconciliationRunAggregateSchema = ReconciliationRunIdentitySchema.extend({ results: z.array(ReconciliationResultSchema).readonly() }).readonly();
+const ReconciliationRunSummaryObjectSchema = ReconciliationRunIdentitySchema.extend({ anomaly: ReconciliationAnomalySchema });
+export const ReconciliationRunSummarySchema = ReconciliationRunSummaryObjectSchema.readonly();
+export const ReconciliationWorkspaceSchema = ReconciliationRunSummaryObjectSchema.extend({ results: z.array(ReconciliationResultSchema).readonly() }).readonly();
 
 export const ReconciliationRunRequestSchema = z.object({ version: z.literal(1), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict();
 export const ReconciliationRunResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
@@ -26,6 +34,7 @@ export const ReconciliationProgressSchema = z.object({ runId: z.string().uuid().
 
 export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', progress: 'reconciliation.progress.v1' } as const;
 export type ReconciliationWorkspace = z.infer<typeof ReconciliationWorkspaceSchema>;
+export type ReconciliationRunAggregate = z.infer<typeof ReconciliationRunAggregateSchema>;
 export type ReconciliationRunSummary = z.infer<typeof ReconciliationRunSummarySchema>;
 export type ReconciliationRunResult = z.infer<typeof ReconciliationRunResultSchema>;
 export type RunsListResult = z.infer<typeof RunsListResultSchema>;
