@@ -19,6 +19,12 @@ pnpm-debug.log*
 *.tsbuildinfo
 .eslintcache
 
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
