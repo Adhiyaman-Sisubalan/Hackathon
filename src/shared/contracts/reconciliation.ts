@@ -12,7 +12,7 @@ export const ReconciliationResultSchema = z.object({
 }).readonly();
 export const ReconciliationMetricsSchema = z.object({ total: z.number().int().nonnegative(), matched: z.number().int().nonnegative(), unresolved: z.number().int().nonnegative(), reconciliationRate: z.number().min(0).max(1), unresolvedRate: z.number().min(0).max(1) }).readonly();
 export const ReconciliationAnomalySchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('insufficient-history'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.number().int().nonnegative().max(4), baselineUnresolvedRate: z.null() }).readonly(),
+  z.object({ kind: z.literal('insufficient-history'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.number().int().nonnegative(), baselineUnresolvedRate: z.null() }).readonly(),
   z.object({ kind: z.literal('normal'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly(),
   z.object({ kind: z.literal('warning'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly()
 ]);

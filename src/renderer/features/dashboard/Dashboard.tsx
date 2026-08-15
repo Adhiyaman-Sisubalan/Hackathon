@@ -46,6 +46,7 @@ export function Dashboard({ api, reconciliationApi, onCompleted }: DashboardProp
     try {
       const response = await runApi.run(asOfDate);
       if (!response.ok) { const field = response.error.field === 'asOfDate' ? 'asOfDate' : undefined; setRunError({ message: response.error.message, field }); if (field) dateRef.current?.focus(); return; }
+      setSummary(response.data.workspace);
       setProgress('Reconciliation completed.');
       onCompleted?.(response.data.workspace);
     } catch { setRunError({ message: 'The reconciliation could not be started. Please retry.' }); }

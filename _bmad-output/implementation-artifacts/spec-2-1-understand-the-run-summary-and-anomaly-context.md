@@ -68,34 +68,34 @@ context:
 
 ## Suggested Review Order
 
-**Authoritative run snapshots**
+**Authoritative run lifecycle**
 
-- Reload committed aggregates so every surface consumes persisted summary and anomaly state.
+- Reconciliation commits aggregates before returning one authoritative persisted workspace.
   [`runs-service.ts:37`](../../src/main/modules/runs/runs-service.ts#L37)
 
-- Persist unresolved rates and derive immutable snapshots from selected run records.
-  [`database.ts:59`](../../src/main/adapters/sqlite/database.ts#L59)
-
-- Restrict anomaly provenance to the versioned five-run seeded baseline.
+- Persisted metrics, seeded provenance, and immutable query snapshots meet at this boundary.
   [`database.ts:90`](../../src/main/adapters/sqlite/database.ts#L90)
 
 **Metrics and contracts**
 
-- Keep summary formulas and threshold decisions pure, deterministic, and display-safe.
+- Pure metrics retain exact threshold boundaries and safe zero-total rates.
   [`reconciliation-metrics.ts:19`](../../src/domain/metrics/reconciliation-metrics.ts#L19)
 
-- Extend typed process-boundary summaries with unresolved-rate and anomaly context.
+- Versioned contracts expose summary and non-blocking anomaly state across processes.
   [`reconciliation.ts:13`](../../src/shared/contracts/reconciliation.ts#L13)
 
-- Backfill legacy runs and store the versioned seeded-history baseline durably.
+- Migration preserves usable rates when legacy completed runs contain zero results.
   [`003-summary-history.sql:1`](../../migrations/003-summary-history.sql#L1)
 
 **Shared operational presentation**
 
-- Reuse one accessible strip to keep Dashboard and Results context identical.
+- One accessible strip gives Dashboard and Results identical persisted operational context.
   [`SummaryStrip.tsx:5`](../../src/renderer/components/SummaryStrip.tsx#L5)
+
+- Successful runs update Dashboard context without requiring a navigation remount.
+  [`Dashboard.tsx:47`](../../src/renderer/features/dashboard/Dashboard.tsx#L47)
 
 **Regression coverage**
 
-- Prove legacy migrations, provenance, and insufficient-history snapshots remain trustworthy.
+- Integration coverage proves migration, provenance, progress, and history edge cases.
   [`reconciliation-runs.test.ts:67`](../../tests/integration/reconciliation-runs.test.ts#L67)

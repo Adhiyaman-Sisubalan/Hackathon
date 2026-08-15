@@ -88,7 +88,12 @@ export class SqliteDatabase {
   }
 
   replaceSeededHistory(seedVersion: string, histories: readonly SeededRunHistory[]): void {
-    if (histories.length !== 5 || new Set(histories.map((history) => history.historyKey)).size !== 5) {
+    if (histories.length !== 5 || new Set(histories.map((history) => history.historyKey)).size !== 5 || histories.some((history) =>
+      !Number.isInteger(history.total) || !Number.isInteger(history.matched) || !Number.isInteger(history.unresolved)
+      || history.total < 0 || history.matched < 0 || history.unresolved < 0
+      || history.matched + history.unresolved !== history.total
+      || history.reconciliationRate !== (history.total === 0 ? 0 : history.matched / history.total)
+      || history.unresolvedRate !== (history.total === 0 ? 0 : history.unresolved / history.total))) {
       throw new Error('Seeded reconciliation history must contain exactly five distinct runs.');
     }
     this.db.prepare('DELETE FROM seeded_run_history WHERE seed_version = ?').run(seedVersion);
@@ -109,7 +114,8 @@ export class SqliteDatabase {
     const rows = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC`).all() as unknown as RunSummaryRow[];
-    return rows.map((row) => this.summarySnapshot(row, seedVersion, thresholds));
+    const historicalRates = this.seededHistoricalRates(seedVersion);
+    return rows.map((row) => this.summarySnapshotFromRates(row, thresholds, historicalRates));
   }
 
   workspaceForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
@@ -127,7 +133,7 @@ export class SqliteDatabase {
       LEFT JOIN source_trades AS ot_murex ON ot_murex.run_id = results.run_id AND ot_murex.source = 'ot-murex' AND ot_murex.trade_id = results.ot_murex_trade_id
       ORDER BY result_rowid ASC`).all(runId) as unknown as HydratedResultRow[];
     return ReconciliationWorkspaceSchema.parse({
-      ...this.summarySnapshot(run, seedVersion, thresholds),
+      ...this.summarySnapshotFromRates(run, thresholds, this.seededHistoricalRates(seedVersion)),
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
@@ -139,10 +145,18 @@ export class SqliteDatabase {
   close(): void { this.db.close(); }
 
   private summarySnapshot(row: RunSummaryRow, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationRunSummary {
+    return this.summarySnapshotFromRates(row, thresholds, this.seededHistoricalRates(seedVersion));
+  }
+
+  private seededHistoricalRates(seedVersion: string): readonly number[] {
+    return (this.db.prepare(`SELECT unresolved_rate AS unresolvedRate FROM seeded_run_history
+      WHERE seed_version = ? ORDER BY completed_at ASC, history_key ASC`).all(seedVersion) as unknown as { unresolvedRate: number }[])
+      .map((history) => history.unresolvedRate);
+  }
+
+  private summarySnapshotFromRates(row: RunSummaryRow, thresholds: AnomalyThresholds, historicalRates: readonly number[]): ReconciliationRunSummary {
     const metrics = { total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate, unresolvedRate: row.unresolvedRate };
-    const historicalRates = this.db.prepare(`SELECT unresolved_rate AS unresolvedRate FROM seeded_run_history
-      WHERE seed_version = ? ORDER BY completed_at ASC, history_key ASC`).all(seedVersion) as unknown as { unresolvedRate: number }[];
-    return ReconciliationRunSummarySchema.parse({ ...row, metrics, anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates.map((history) => history.unresolvedRate), thresholds) });
+    return ReconciliationRunSummarySchema.parse({ ...row, metrics, anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds) });
   }
 }
 

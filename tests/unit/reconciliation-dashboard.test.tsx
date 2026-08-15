@@ -21,7 +21,7 @@ describe('reconciliation dashboard form', () => {
     expect(date.getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('keeps the date visible, disables duplicate submission, and hands the completed snapshot upward', async () => {
+  it('keeps the date visible, disables duplicate submission, and renders the completed persisted snapshot without navigation', async () => {
     let resolve!: (value: ReconciliationRunResult) => void;
     const run = vi.fn(() => new Promise<ReconciliationRunResult>((done) => { resolve = done; }));
     const completed = vi.fn();
@@ -33,5 +33,7 @@ describe('reconciliation dashboard form', () => {
     expect(run).toHaveBeenCalledTimes(1);
     resolve({ ok: true, data: { workspace: { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 1, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 }, anomaly: { kind: 'normal', currentUnresolvedRate: 0, historyCount: 5, baselineUnresolvedRate: .1 }, results: [] } } });
     await waitFor(() => expect(completed).toHaveBeenCalledOnce());
+    expect(await screen.findByLabelText('Reconciliation summary')).toBeTruthy();
+    expect(screen.getByText('100.0%')).toBeTruthy();
   });
 });

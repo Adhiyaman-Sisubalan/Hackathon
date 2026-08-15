@@ -82,6 +82,23 @@ describe('persisted reconciliation runs', () => {
     database.close();
   });
 
+  it('backfills a zero-total legacy run with safe zero rates and a usable summary', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'reconciliation-zero-upgrade-'));
+    directories.push(directory);
+    const database = new SqliteDatabase({ path: path.join(directory, 'upgrade.sqlite') });
+    database.migrate([migrations[0]!]);
+    const runId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    database.db.prepare(`INSERT INTO runs (id, status, completed_at, total, matched, unresolved, reconciliation_rate) VALUES (?, 'completed', ?, 0, 0, 0, 0)`)
+      .run(runId, '2026-08-15T00:00:00.000Z');
+    database.migrate(migrations);
+    const runs = new RunsService(database, initialSeed);
+    runs.seed();
+    expect(database.db.prepare('SELECT unresolved_rate AS unresolvedRate FROM runs WHERE id = ?').get(runId)).toEqual({ unresolvedRate: 0 });
+    expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 0, matched: 0, unresolved: 0, reconciliationRate: 0, unresolvedRate: 0 } });
+    expect(runs.workspaceForRun(runId)).toMatchObject({ runId, metrics: { reconciliationRate: 0, unresolvedRate: 0 } });
+    database.close();
+  });
+
   it('lists completed runs newest-first and hydrates their exact persisted evidence without reconciling again', () => {
     let scenarioLookups = 0;
     const registry: ScenarioRegistry = { find(asOfDate) { scenarioLookups += 1; return reconciliationScenarios.find(asOfDate); } };
@@ -117,6 +134,27 @@ describe('persisted reconciliation runs', () => {
     database.db.prepare('DELETE FROM seeded_run_history WHERE seed_version = ? AND history_key = ?').run(initialSeed.version, 'history-05');
     expect(runs.latestSummary()).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 4, baselineUnresolvedRate: null } });
     expect(runs.workspaceForRun(run.runId)).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 4, baselineUnresolvedRate: null } });
+    database.close();
+  });
+
+  it('keeps a persisted run usable with calm insufficient-history context when more than five rows exist', () => {
+    const { database, runs } = setup();
+    const run = runs.run('2026-08-15');
+    database.db.prepare(`INSERT INTO seeded_run_history (seed_version, history_key, as_of_date, completed_at, total, matched, unresolved, reconciliation_rate, unresolved_rate)
+      VALUES (?, 'history-06', '2026-08-13', '2026-08-13T18:00:00.000Z', 100, 90, 10, .9, .1)`).run(initialSeed.version);
+    expect(runs.latestSummary()).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 6, baselineUnresolvedRate: null } });
+    expect(runs.listCompletedRuns()).toMatchObject([{ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 6, baselineUnresolvedRate: null } }]);
+    expect(runs.workspaceForRun(run.runId)).toMatchObject({ runId: run.runId, anomaly: { kind: 'insufficient-history', historyCount: 6, baselineUnresolvedRate: null } });
+    database.close();
+  });
+
+  it('does not report failure after a durable run commits but its reload fails', () => {
+    const { database, runs } = setup();
+    const phases: string[] = [];
+    database.workspaceForRun = () => { throw new Error('reload unavailable'); };
+    expect(() => runs.run('2026-08-15', (event) => { phases.push(event.phase); })).toThrow('reload unavailable');
+    expect(phases).toEqual(['started']);
+    expect(database.db.prepare('SELECT count(*) AS count FROM runs').get()).toEqual({ count: 1 });
     database.close();
   });
 });

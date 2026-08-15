@@ -34,11 +34,8 @@ export function anomalyContextFor(currentUnresolvedRate: number, seededHistorica
     return { kind: 'insufficient-history', currentUnresolvedRate, historyCount: seededHistoricalUnresolvedRates.length, baselineUnresolvedRate: null };
   }
   const baselineUnresolvedRate = seededHistoricalUnresolvedRates.reduce((sum, rate) => sum + rate, 0) / seededHistoricalUnresolvedRates.length;
-  // Persisted decimal rates arrive as JavaScript numbers; a tiny tolerance keeps exact
-  // product boundaries from changing solely because of binary representation.
-  const epsilon = 1e-12;
-  const isWarning = currentUnresolvedRate - baselineUnresolvedRate + epsilon >= thresholds.minimumPercentagePointIncrease
-    && currentUnresolvedRate + epsilon >= baselineUnresolvedRate * thresholds.minimumBaselineMultiple;
+  const isWarning = currentUnresolvedRate - baselineUnresolvedRate >= thresholds.minimumPercentagePointIncrease
+    && currentUnresolvedRate >= baselineUnresolvedRate * thresholds.minimumBaselineMultiple;
   return { kind: isWarning ? 'warning' : 'normal', currentUnresolvedRate, historyCount: 5, baselineUnresolvedRate };
 }
 
