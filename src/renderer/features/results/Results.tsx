@@ -54,21 +54,28 @@ const tableFeaturesForResults = tableFeatures({
 const column = createColumnHelper<typeof tableFeaturesForResults, ResultRow>();
 const columns = column.columns([
   column.accessor('counterparty', { header: 'Counterparty', enableHiding: false }),
+  // Status leads the detail columns: it is the signal the reviewer scans first and must never be scrolled off.
+  column.accessor('status', { header: 'Status', enableHiding: false, filterFn: 'statusFilter', cell: ({ getValue }) => <ReconciliationStatusText status={getValue<ReconciliationStatus>()} /> }),
+  // Editable; rendered by the table body so the cell can reach the save handlers.
+  column.accessor('mismatchReason', { id: 'mismatchReason', header: 'Mismatch reason' }),
   column.accessor('isin', { header: 'ISIN', enableHiding: false, sortUndefined: 'last' }),
   column.accessor('buySell', { id: 'buySell', header: 'Buy / sell', enableHiding: false, sortUndefined: 'last', cell: ({ getValue }) => valueOrDash(getValue<string | undefined>()) }),
   column.accessor('amount', { header: 'Amount', enableHiding: false, sortUndefined: 'last', sortFn: decimalSort, cell: ({ getValue }) => formatDecimal(getValue<string | undefined>()), meta: { numeric: true } }),
   column.accessor('quantity', { header: 'Quantity', enableHiding: false, sortUndefined: 'last', sortFn: decimalSort, cell: ({ getValue }) => formatDecimal(getValue<string | undefined>()), meta: { numeric: true } }),
   column.accessor('currency', { header: 'Currency', enableHiding: false, sortUndefined: 'last' }),
   column.accessor('settlementDate', { header: 'Settlement date', enableHiding: false, sortUndefined: 'last', cell: ({ getValue }) => formatDate(getValue<string | undefined>()), meta: { date: true } }),
-  column.accessor('status', { header: 'Status', enableHiding: false, filterFn: 'statusFilter', cell: ({ getValue }) => <ReconciliationStatusText status={getValue<ReconciliationStatus>()} /> }),
   column.accessor('tradeId', { header: 'Trade ID', sortUndefined: 'last' }),
   column.accessor('broker', { header: 'Broker' }),
   column.accessor('sourceSystem', { header: 'Source system' }),
   column.accessor('tradeDate', { header: 'Trade date', sortUndefined: 'last', cell: ({ getValue }) => formatDate(getValue<string | undefined>()), meta: { date: true } }),
   column.accessor('price', { header: 'Price', sortUndefined: 'last', sortFn: decimalSort, cell: ({ getValue }) => formatDecimal(getValue<string | undefined>()), meta: { numeric: true } }),
-  column.accessor('accountBook', { id: 'accountBook', header: 'Account / book' }),
-  column.accessor('mismatchReason', { id: 'mismatchReason', header: 'Mismatch reason' })
+  column.accessor('accountBook', { id: 'accountBook', header: 'Account / book' })
 ]);
+
+/** The engine's derived finding, shown as the placeholder until an analyst overrides it. */
+function derivedReasonText(result: ReconciliationResult): string {
+  return result.reason ? result.reason.replaceAll('-', ' ') : '';
+}
 
 function decimalSort(rowA: { getValue: <T>(columnId: string) => T }, rowB: { getValue: <T>(columnId: string) => T }, columnId: string): number {
   return compareNormalizedDecimals(rowA.getValue<string>(columnId), rowB.getValue<string>(columnId));
@@ -115,7 +122,8 @@ function rowFor(result: ReconciliationResult): ResultRow {
     tradeDate: undefined,
     price: source?.price,
     accountBook: '—',
-    mismatchReason: result.reason ? result.reason.replaceAll('-', ' ') : '—'
+    // Effective reason: the analyst's value when set, otherwise the engine's finding. Sorting follows what is shown.
+    mismatchReason: result.mismatchReason ?? derivedReasonText(result)
   };
 }
 
@@ -135,6 +143,10 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const [commentErrors, setCommentErrors] = useState<ReadonlyMap<string, CommentError>>(new Map());
   const [savingCommentResultIds, setSavingCommentResultIds] = useState<ReadonlySet<string>>(new Set());
   const [savedCommentResultIds, setSavedCommentResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [reasonDrafts, setReasonDrafts] = useState<ReadonlyMap<string, string>>(new Map());
+  const [reasonErrors, setReasonErrors] = useState<ReadonlyMap<string, CommentError>>(new Map());
+  const [savingReasonResultIds, setSavingReasonResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [savedReasonResultIds, setSavedReasonResultIds] = useState<ReadonlySet<string>>(new Set());
   const [previewDrafts, setPreviewDrafts] = useState<ReadonlyMap<string, BrokerEmailDraft>>(new Map());
   const [previewErrors, setPreviewErrors] = useState<ReadonlyMap<string, PreviewError>>(new Map());
   const [previewingResultIds, setPreviewingResultIds] = useState<ReadonlySet<string>>(new Set());
@@ -152,6 +164,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const reportOperationRef = useRef(0);
   const inFlightReviewIds = useRef(new Set<string>());
   const inFlightCommentIds = useRef(new Set<string>());
+  const inFlightReasonIds = useRef(new Set<string>());
   const inFlightPreviewIds = useRef(new Set<string>());
   const workspaceMutationQueue = useRef(Promise.resolve());
   const compactInspectorOpenRef = useRef(false);
@@ -162,7 +175,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
     columns,
     data,
     getRowId: (row) => row.result.id,
-    initialState: { columnVisibility: Object.fromEntries(['tradeId', 'broker', 'sourceSystem', 'tradeDate', 'price', 'accountBook', 'mismatchReason'].map((id) => [id, false])) },
+    initialState: { columnVisibility: Object.fromEntries(['tradeId', 'broker', 'sourceSystem', 'tradeDate', 'price', 'accountBook'].map((id) => [id, false])) },
     state: { columnFilters: [{ id: 'status', value: selected }] },
     enableMultiSort: false
   });
@@ -180,6 +193,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const localOutstandingReviews = workspace.reviewProgress.totalUnmatched - workspace.reviewProgress.reviewedUnmatched;
   const outstandingReviews = authoritativeOutstandingReviews ?? localOutstandingReviews;
   const hasActiveFilters = selected.length !== reconciliationStatuses.length;
+  const reviewedShare = workspace.reviewProgress.totalUnmatched > 0 ? workspace.reviewProgress.reviewedUnmatched / workspace.reviewProgress.totalUnmatched : 1;
 
   useEffect(() => {
     if (reportWorkspaceRunIdRef.current !== workspace.runId) {
@@ -289,6 +303,41 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       });
     }
   };
+  const reasonDraftFor = (result: ReconciliationResult) => reasonDrafts.get(result.id) ?? result.mismatchReason ?? '';
+  const setReasonDraft = (resultId: string, mismatchReason: string) => {
+    setReasonDrafts((current) => new Map(current).set(resultId, mismatchReason));
+    setReasonErrors((current) => { const next = new Map(current); next.delete(resultId); return next; });
+    setSavedReasonResultIds((current) => { const next = new Set(current); next.delete(resultId); return next; });
+  };
+  const saveMismatchReason = async (result: ReconciliationResult) => {
+    const resultId = result.id;
+    const mismatchReason = reasonDraftFor(result);
+    // Committing is idempotent: an unchanged value never reaches main.
+    if (result.status === 'matched' || inFlightReasonIds.current.has(resultId) || mismatchReason === (result.mismatchReason ?? '')) return;
+    inFlightReasonIds.current.add(resultId);
+    setSavingReasonResultIds((current) => new Set(current).add(resultId));
+    setReasonErrors((current) => { const next = new Map(current); next.delete(resultId); return next; });
+    try {
+      if (!window.reconciliation) {
+        setReasonErrors((current) => new Map(current).set(resultId, { resultId, message: 'Mismatch reason saving is unavailable.', retryable: false }));
+        return;
+      }
+      const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.saveMismatchReason(workspace.runId, resultId, mismatchReason));
+      if (response.ok) {
+        const saved = response.data.workspace.results.find((candidate) => candidate.id === resultId)?.mismatchReason;
+        setReasonDrafts((current) => new Map(current).set(resultId, saved ?? ''));
+        setSavedReasonResultIds((current) => new Set(current).add(resultId));
+        onWorkspaceChanged?.(response.data.workspace);
+        return;
+      }
+      setReasonErrors((current) => new Map(current).set(resultId, { resultId, message: response.error.message, retryable: response.error.retryable }));
+    } catch {
+      setReasonErrors((current) => new Map(current).set(resultId, { resultId, message: 'The mismatch reason could not be saved. Please retry.', retryable: true }));
+    } finally {
+      inFlightReasonIds.current.delete(resultId);
+      setSavingReasonResultIds((current) => { const next = new Set(current); next.delete(resultId); return next; });
+    }
+  };
   const previewBrokerEmail = async (result: ReconciliationResult) => {
     const resultId = result.id;
     if (result.status !== 'unmatched' || !result.brokerTrade?.brokerContact || inFlightPreviewIds.current.has(resultId)) return;
@@ -368,54 +417,128 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   }, [compactInspectorOpen]);
 
   return <section aria-labelledby="results-title" className={styles.results}>
-    <p className={styles.eyebrow}>Completed reconciliation</p><h1 ref={headingRef} id="results-title" tabIndex={-1}>Results</h1>
-    <p>Run {workspace.runId} · As-of date {formatDate(workspace.asOfDate)}</p>
+    <div className={styles.header}>
+      <div className={styles.identity}>
+        <p className={styles.eyebrow}>Completed reconciliation</p>
+        <h1 ref={headingRef} id="results-title" tabIndex={-1}>Results</h1>
+        <p className={styles.runMeta}>Run {workspace.runId} · As-of date {formatDate(workspace.asOfDate)}</p>
+      </div>
+    </div>
     <SummaryStrip summary={workspace} />
     <section className={styles.report} aria-label="Verified report">
-      <h2>Verified report</h2>
-      {outstandingReviews > 0 ? <p>Save is available after {outstandingReviews} unmatched {outstandingReviews === 1 ? 'result is' : 'results are'} reviewed.</p> : <p>All unmatched Results are reviewed. The report will contain the authoritative saved Run.</p>}
-      <button type="button" onClick={() => void saveReport()} disabled={savingReport || outstandingReviews > 0} aria-describedby={outstandingReviews > 0 ? 'report-review-gate' : undefined}>{savingReport ? 'Saving verified report…' : 'Save verified report'}</button>
-      {outstandingReviews > 0 && <p id="report-review-gate">{outstandingReviews} unmatched {outstandingReviews === 1 ? 'review remains' : 'reviews remain'}.</p>}
-      {reportDestination && <p className={styles.success} role="status">Verified report saved to {reportDestination}.</p>}
-      {reportError && <div className={styles.error} role="alert"><p>{reportError.message}</p>{reportError.retryable && <button type="button" onClick={() => void saveReport()}>Retry saving report</button>}</div>}
-    </section>
-    {loadError && <div className={styles.error} role="alert"><p>Results could not be refreshed: {loadError}</p>{onRetry && <button type="button" onClick={onRetry}>Retry</button>}</div>}
-    <div className={styles.toolbar}>
-      <fieldset><legend>Status filters</legend><div className={styles.filters}>{reconciliationStatuses.map((status) => <label key={status}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /> {statusLabels[status]}</label>)}</div></fieldset>
-      <fieldset><legend>Columns</legend><div className={styles.columns}>{table.getAllLeafColumns().filter((column) => column.getCanHide()).map((column) => <label key={column.id}><input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()} /> {String(column.columnDef.header)}</label>)}</div></fieldset>
-    </div>
-    <div className={styles.feedback} aria-live="polite">
-      <p>Showing {visibleRows.length} results.{visibleRows.length === 0 && isAllResolved ? ' All results resolved.' : ''}</p>
-      <p>{workspace.metrics.total} total results.</p>
-      {isAllResolved && <p>All results in this run are resolved. Matched records remain available.</p>}
-      {visibleRows.length === 0 && <div className={styles.empty}><p>No matching records.</p>{hasActiveFilters && <button type="button" onClick={clearFilters}>Clear filters</button>}</div>}
-    </div>
-    <p className={styles.sourceNote}>Source values use Broker when present; otherwise OT/MUREX values are shown.</p>
-    <div className={styles.workspace}>
-      <div className={styles.tableWrap}>
-        <table className={styles.table}>
-        <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => {
-          const sorted = header.column.getIsSorted();
-          const canSort = header.column.getCanSort();
-          return <th key={header.id} scope="col" aria-sort={sorted === false ? 'none' : sorted === 'asc' ? 'ascending' : 'descending'} className={header.column.columnDef.meta?.numeric ? styles.numeric : header.column.columnDef.meta?.date ? styles.date : undefined}>
-            {canSort ? <button type="button" className={styles.sortButton} onClick={() => header.column.toggleSorting()}>{String(header.column.columnDef.header)}{sorted === 'asc' ? ' ↑' : sorted === 'desc' ? ' ↓' : ''}</button> : String(header.column.columnDef.header)}
-          </th>;
-        })}</tr>)}</thead>
-        <tbody>{visibleRows.map((row) => <tr key={row.id} className={styles.row} data-selected={selectedResultId === row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} className={cell.column.columnDef.meta?.numeric ? styles.numeric : cell.column.columnDef.meta?.date ? styles.date : undefined}>
-          {cell.column.id === 'counterparty' ? <button type="button" className={styles.select} aria-label={`${selectedResultId === row.id ? 'Selected' : 'Select'} ${row.original.tradeId ?? 'reconciliation record'}`} aria-describedby={selectedReviewError && selectedResultId === row.id ? 'review-error' : selectedResultId === row.id ? 'selected-result-status' : undefined} onClick={() => selectResult(row.original.result)}>{row.getValue<string>('counterparty')}</button> : <table.FlexRender cell={cell} />}
-        </td>)}</tr>)}</tbody>
-        </table>
+      <div className={styles.reportBar}>
+        <div className={styles.reportCopy}>
+          <h2>Verified report</h2>
+          {outstandingReviews > 0
+            ? <p>Save is available after {outstandingReviews} unmatched {outstandingReviews === 1 ? 'result is' : 'results are'} reviewed.</p>
+            : <p>All unmatched Results are reviewed. The report will contain the authoritative saved Run.</p>}
+        </div>
+        <div className={styles.reportAction}>
+          {outstandingReviews > 0 && <p id="report-review-gate" className={styles.gate}>{outstandingReviews} unmatched {outstandingReviews === 1 ? 'review remains' : 'reviews remain'}.</p>}
+          <button type="button" className={styles.primary} onClick={() => void saveReport()} disabled={savingReport || outstandingReviews > 0} aria-describedby={outstandingReviews > 0 ? 'report-review-gate' : undefined}>{savingReport ? 'Saving verified report…' : 'Save verified report'}</button>
+        </div>
       </div>
-      {selectedResult && <p id="selected-result-status" className={styles.visuallyHidden}>Selected Result: {selectedResult.brokerTrade?.tradeId ?? selectedResult.otMurexTrade?.tradeId ?? 'reconciliation record'}.</p>}
-      <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
-      {selectedReviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {selectedReviewError.message}</p>{selectedReviewError.retryable && <button type="button" onClick={() => selectedResult && void review(selectedResult)}>Retry review</button>}</div>}
-      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} previewDraft={selectedPreviewDraft} previewError={selectedPreviewError} previewing={Boolean(selectedResultId && previewingResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} onPreview={previewBrokerEmail} onClosePreview={closePreview} previewHeadingRef={previewHeadingRef} previewButtonRef={previewButtonRef} className={styles.detailPanel} />
+      {reportDestination && <p className={styles.success} role="status">Verified report saved to {reportDestination}.</p>}
+      {reportError && <div className={styles.error} role="alert"><p>{reportError.message}</p>{reportError.retryable && <button type="button" className={styles.secondary} onClick={() => void saveReport()}>Retry saving report</button>}</div>}
+    </section>
+    {loadError && <div className={styles.error} role="alert"><p>Results could not be refreshed: {loadError}</p>{onRetry && <button type="button" className={styles.secondary} onClick={onRetry}>Retry</button>}</div>}
+    <div className={styles.workspace}>
+      <div className={styles.gridCard}>
+        <div className={styles.toolbar}>
+          <fieldset className={styles.filterGroup}><legend>Status filters</legend><div className={styles.chips}>{reconciliationStatuses.map((status) => <label key={status} className={styles.chip}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /> {statusLabels[status]}</label>)}</div></fieldset>
+          <fieldset className={styles.filterGroup}><legend>Columns</legend><div className={styles.chips}>{table.getAllLeafColumns().filter((column) => column.getCanHide()).map((column) => <label key={column.id} className={styles.chip}><input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()} /> {String(column.columnDef.header)}</label>)}</div></fieldset>
+        </div>
+        {workspace.reviewProgress.totalUnmatched > 0 && <div className={styles.reviewBar}>
+          <span className={styles.reviewLabel}>Review progress</span>
+          <span className={styles.reviewTrack} aria-hidden="true"><span style={{ inlineSize: `${Math.round(reviewedShare * 100)}%` }} /></span>
+          <span className={styles.reviewCount}>{workspace.reviewProgress.reviewedUnmatched} of {workspace.reviewProgress.totalUnmatched} unmatched reviewed</span>
+        </div>}
+        <div className={styles.feedback} aria-live="polite">
+          <p className={styles.count}>Showing {visibleRows.length} results.{visibleRows.length === 0 && isAllResolved ? ' All results resolved.' : ''}</p>
+          <p className={styles.total}>{workspace.metrics.total} total results.</p>
+          {isAllResolved && <p className={styles.resolvedNote}>All results in this run are resolved. Matched records remain available.</p>}
+          {visibleRows.length === 0 && <div className={styles.empty}><p>No matching records.</p>{hasActiveFilters && <button type="button" className={styles.secondary} onClick={clearFilters}>Clear filters</button>}</div>}
+        </div>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+          <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => {
+            const sorted = header.column.getIsSorted();
+            const canSort = header.column.getCanSort();
+            return <th key={header.id} scope="col" aria-sort={sorted === false ? 'none' : sorted === 'asc' ? 'ascending' : 'descending'} className={header.column.columnDef.meta?.numeric ? styles.numeric : header.column.columnDef.meta?.date ? styles.date : undefined}>
+              {canSort
+                ? <button type="button" className={styles.sortButton} data-sorted={sorted === false ? undefined : true} onClick={() => header.column.toggleSorting()}>{String(header.column.columnDef.header)}<span aria-hidden="true" className={styles.sortIndicator}>{sorted === 'asc' ? '↑' : sorted === 'desc' ? '↓' : '↕'}</span></button>
+                : String(header.column.columnDef.header)}
+            </th>;
+          })}</tr>)}</thead>
+          <tbody>{visibleRows.map((row) => <tr key={row.id} className={styles.row} data-selected={selectedResultId === row.id} data-status={row.original.status}>{row.getVisibleCells().map((cell) => <td key={cell.id} className={cell.column.columnDef.meta?.numeric ? styles.numeric : cell.column.columnDef.meta?.date ? styles.date : undefined}>
+            {cell.column.id === 'counterparty' ? <span className={styles.selectCell}>
+              <button type="button" className={styles.select} aria-label={`${selectedResultId === row.id ? 'Selected' : 'Select'} ${row.original.tradeId ?? 'reconciliation record'}`} aria-describedby={selectedReviewError && selectedResultId === row.id ? 'review-error' : selectedResultId === row.id ? 'selected-result-status' : undefined} onClick={() => selectResult(row.original.result)}>{row.getValue<string>('counterparty')}</button>
+              {(row.original.result.reviewed || locallyReviewedResultIds.has(row.id)) && <span aria-hidden="true" className={styles.reviewedFlag}>✓</span>}
+            </span> : cell.column.id === 'mismatchReason' ? <MismatchReasonCell
+              result={row.original.result}
+              label={row.original.tradeId ?? 'reconciliation record'}
+              draft={reasonDraftFor(row.original.result)}
+              saving={savingReasonResultIds.has(row.id)}
+              saved={savedReasonResultIds.has(row.id)}
+              error={reasonErrors.get(row.id)}
+              onDraftChange={setReasonDraft}
+              onCommit={saveMismatchReason}
+            /> : <table.FlexRender cell={cell} />}
+          </td>)}</tr>)}</tbody>
+          </table>
+        </div>
+        <p className={styles.sourceNote}>Source values use Broker when present; otherwise OT/MUREX values are shown.</p>
+      </div>
+      <div className={styles.side}>
+        {selectedResult && <p id="selected-result-status" className={styles.visuallyHidden}>Selected Result: {selectedResult.brokerTrade?.tradeId ?? selectedResult.otMurexTrade?.tradeId ?? 'reconciliation record'}.</p>}
+        <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
+        {selectedReviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {selectedReviewError.message}</p>{selectedReviewError.retryable && <button type="button" className={styles.secondary} onClick={() => selectedResult && void review(selectedResult)}>Retry review</button>}</div>}
+        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} previewDraft={selectedPreviewDraft} previewError={selectedPreviewError} previewing={Boolean(selectedResultId && previewingResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} onPreview={previewBrokerEmail} onClosePreview={closePreview} previewHeadingRef={previewHeadingRef} previewButtonRef={previewButtonRef} className={styles.detailPanel} />
+      </div>
       {compactInspectorOpen && <aside className={styles.compactInspector} aria-labelledby="inspector-title">
         <button type="button" className={styles.closeInspector} onClick={closeInspector}>Close inspector</button>
         <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} previewDraft={selectedPreviewDraft} previewError={selectedPreviewError} previewing={Boolean(selectedResultId && previewingResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} onPreview={previewBrokerEmail} onClosePreview={closePreview} previewHeadingRef={previewHeadingRef} previewButtonRef={previewButtonRef} headingRef={inspectorHeadingRef} compact />
       </aside>}
     </div>
   </section>;
+}
+
+/**
+ * In-grid editor for the analyst's mismatch reason. Commits on blur and on Enter; Escape
+ * restores the persisted value. Matched results are not editable and stay plain text.
+ */
+function MismatchReasonCell({ result, label, draft, saving, saved, error, onDraftChange, onCommit }: {
+  result: ReconciliationResult;
+  label: string;
+  draft: string;
+  saving: boolean;
+  saved: boolean;
+  error: CommentError | undefined;
+  onDraftChange(resultId: string, mismatchReason: string): void;
+  onCommit(result: ReconciliationResult): void;
+}) {
+  const derived = derivedReasonText(result);
+  if (result.status === 'matched') return <span className={styles.readOnlyReason}>{derived === '' ? '—' : derived}</span>;
+  return <span className={styles.reasonCell}>
+    <input
+      type="text"
+      className={styles.reasonInput}
+      value={draft}
+      placeholder={derived === '' ? 'Add a reason' : derived}
+      aria-label={`Mismatch reason for ${label}`}
+      aria-invalid={Boolean(error)}
+      disabled={saving}
+      maxLength={200}
+      onChange={(event) => onDraftChange(result.id, event.target.value)}
+      onBlur={() => onCommit(result)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+        if (event.key === 'Escape') { event.preventDefault(); onDraftChange(result.id, result.mismatchReason ?? ''); }
+      }}
+    />
+    {saved && <span className={styles.reasonSaved} role="status">Saved</span>}
+    {error && <span className={styles.reasonError} role="alert">{error.message}</span>}
+  </span>;
 }
 
 function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, savingComment, commentSaved, previewDraft, previewError, previewing, onCommentDraftChange, onSaveComment, onPreview, onClosePreview, previewHeadingRef, previewButtonRef, className, compact, headingRef }: {
@@ -442,12 +565,14 @@ function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, 
   const source = result?.brokerTrade ?? result?.otMurexTrade;
   const key = source ? `${source.isin} · ${source.buySell === 'buy' ? 'Buy' : 'Sell'} · ${source.currency} · ${formatDate(source.settlementDate)}` : 'Unavailable';
   return <aside className={className} aria-label="Result detail">
-    <h2 ref={headingRef} id={compact ? 'inspector-title' : undefined} tabIndex={compact ? -1 : undefined}>Result detail</h2>
-    {!result && <p>Select a Result to inspect its evidence.</p>}
+    <div className={styles.panelHead}>
+      <h2 ref={headingRef} id={compact ? 'inspector-title' : undefined} tabIndex={compact ? -1 : undefined}>Result detail</h2>
+      {result && <ReconciliationStatusText status={result.status} />}
+    </div>
+    {!result && <p className={styles.panelPlaceholder}>Select a Result to inspect its evidence.</p>}
     {result && <>
       <dl className={styles.detailSummary}>
         <div><dt>Reconciliation key</dt><dd>{key}</dd></div>
-        <div><dt>Status</dt><dd><ReconciliationStatusText status={result.status} /></dd></div>
         <div><dt>Reason</dt><dd>{result.reason?.replaceAll('-', ' ') ?? '—'}</dd></div>
         {result.status === 'unmatched' && <div><dt>Review</dt><dd>{reviewed ? 'Reviewed' : reviewing ? 'Saving review…' : 'Not reviewed'}</dd></div>}
       </dl>
@@ -470,14 +595,16 @@ function CommentEditor({ result, draft, error, saving, saved, onDraftChange, onS
 }) {
   const controlId = useId();
   const errorId = `${controlId}-error`;
-  if (result.status === 'matched') return <section className={styles.comment}><h3>Comment</h3><p>Comments are unavailable for matched Results.</p></section>;
-  return <section className={styles.comment} aria-label="Resolution comment">
+  if (result.status === 'matched') return <section className={styles.section}><h3>Comment</h3><p className={styles.sectionNote}>Comments are unavailable for matched Results.</p></section>;
+  return <section className={styles.section} aria-label="Resolution comment">
     <h3>Comment</h3>
-    <label htmlFor={controlId}>Comment</label>
-    <textarea id={controlId} value={draft} onChange={(event) => onDraftChange(result.id, event.target.value)} aria-describedby={error ? errorId : undefined} aria-invalid={Boolean(error)} disabled={saving} />
-    <button type="button" onClick={() => onSave(result)} disabled={saving}>{saving ? 'Saving comment…' : 'Save comment'}</button>
-    {saved && <p className={styles.success} role="status">Comment saved.</p>}
-    {error && <div id={errorId} className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" onClick={() => onSave(result)}>Retry comment save</button>}</div>}
+    <label htmlFor={controlId} className={styles.visuallyHidden}>Comment</label>
+    <textarea id={controlId} className={styles.textarea} value={draft} onChange={(event) => onDraftChange(result.id, event.target.value)} aria-describedby={error ? errorId : undefined} aria-invalid={Boolean(error)} disabled={saving} placeholder="Record what you found and the next action." />
+    <div className={styles.sectionActions}>
+      <button type="button" className={styles.secondary} onClick={() => onSave(result)} disabled={saving}>{saving ? 'Saving comment…' : 'Save comment'}</button>
+      {saved && <p className={styles.success} role="status">Comment saved.</p>}
+    </div>
+    {error && <div id={errorId} className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" className={styles.secondary} onClick={() => onSave(result)}>Retry comment save</button>}</div>}
   </section>;
 }
 
@@ -491,32 +618,36 @@ function BrokerPreview({ result, draft, error, previewing, onPreview, onClose, h
   headingRef: RefObject<HTMLHeadingElement | null>;
   buttonRef: RefObject<HTMLButtonElement | null>;
 }) {
-  if (draft) return <section className={styles.preview} aria-label="Broker email draft">
-    <p className={styles.draftStatus} aria-label="Draft status">Draft</p>
-    <h3 ref={headingRef} tabIndex={-1}>Broker email draft</h3>
+  if (draft) return <section className={styles.section} aria-label="Broker email draft">
+    <div className={styles.draftHead}>
+      <h3 ref={headingRef} tabIndex={-1}>Broker email draft</h3>
+      <p className={styles.draftStatus} aria-label="Draft status">Draft</p>
+    </div>
     <dl className={styles.detailSummary}>
       <div><dt>To</dt><dd>{draft.recipient}</dd></div>
       <div><dt>Subject</dt><dd>{draft.subject}</dd></div>
     </dl>
     <p className={styles.emailBody}>{draft.body}</p>
-    <table className={styles.draftTable}>
-      <caption>Unmatched trades for {draft.brokerName}</caption>
-      <thead><tr><th scope="col">Trade ID</th><th scope="col">ISIN</th><th scope="col">Buy / sell</th><th scope="col">Amount</th><th scope="col">Quantity</th><th scope="col">Currency</th><th scope="col">Settlement date</th><th scope="col">Mismatch reason</th><th scope="col">Comment</th></tr></thead>
-      <tbody>{draft.rows.map((row) => <tr key={row.tradeId}><td>{row.tradeId}</td><td>{row.isin}</td><td>{row.buySell}</td><td>{formatDecimal(row.amount)}</td><td>{formatDecimal(row.quantity)}</td><td>{row.currency}</td><td>{formatDate(row.settlementDate)}</td><td>{row.mismatchReason.replaceAll('-', ' ')}</td><td>{row.comment ?? '—'}</td></tr>)}</tbody>
-    </table>
-    <p className={styles.previewNotice}>This is a preview only. No email will be sent.</p>
-    <button type="button" onClick={() => onClose(result.id)}>Back to detail</button>
+    <div className={styles.draftTableWrap}>
+      <table className={styles.draftTable}>
+        <caption>Unmatched trades for {draft.brokerName}</caption>
+        <thead><tr><th scope="col">Trade ID</th><th scope="col">ISIN</th><th scope="col">Buy / sell</th><th scope="col">Amount</th><th scope="col">Quantity</th><th scope="col">Currency</th><th scope="col">Settlement date</th><th scope="col">Mismatch reason</th><th scope="col">Comment</th></tr></thead>
+        <tbody>{draft.rows.map((row) => <tr key={row.tradeId}><td>{row.tradeId}</td><td>{row.isin}</td><td>{row.buySell}</td><td>{formatDecimal(row.amount)}</td><td>{formatDecimal(row.quantity)}</td><td>{row.currency}</td><td>{formatDate(row.settlementDate)}</td><td>{row.mismatchReason.replaceAll('-', ' ')}</td><td>{row.comment ?? '—'}</td></tr>)}</tbody>
+      </table>
+    </div>
+    <p className={styles.sectionNote}>This is a preview only. No email will be sent.</p>
+    <button type="button" className={styles.secondary} onClick={() => onClose(result.id)}>Back to detail</button>
   </section>;
   const explanation = result.status !== 'unmatched' ? 'Email drafts are available only for unmatched Results.' : !result.brokerTrade?.brokerContact ? 'Broker details are unavailable for this Result.' : null;
-  return <section className={styles.preview} aria-label="Broker email preview">
+  return <section className={styles.section} aria-label="Broker email preview">
     <h3>Broker email</h3>
-    {explanation ? <p>{explanation}</p> : <button ref={buttonRef} type="button" onClick={() => onPreview(result)} disabled={previewing}>{previewing ? 'Preparing draft…' : 'Preview broker email'}</button>}
-    {error && <div className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" onClick={() => onPreview(result)}>Retry</button>}<button type="button" onClick={() => onClose(result.id)}>Back to detail</button></div>}
+    {explanation ? <p className={styles.sectionNote}>{explanation}</p> : <button ref={buttonRef} type="button" className={styles.secondary} onClick={() => onPreview(result)} disabled={previewing}>{previewing ? 'Preparing draft…' : 'Preview broker email'}</button>}
+    {error && <div className={styles.error} role="alert"><p>{error.message}</p><div className={styles.sectionActions}><button type="button" className={styles.secondary} onClick={() => onPreview(result)}>Retry</button><button type="button" className={styles.secondary} onClick={() => onClose(result.id)}>Back to detail</button></div></div>}
   </section>;
 }
 
 function Evidence({ title, trade, missing }: { title: string; trade: ReconciliationResult['brokerTrade']; missing: string }) {
-  return <section className={styles.evidence}><h3>{title}</h3>{!trade ? <p>{missing}</p> : <dl>
+  return <section className={styles.section}><h3>{title}</h3>{!trade ? <p className={styles.sectionNote}>{missing}</p> : <dl className={styles.evidenceGrid}>
     <div><dt>Trade ID</dt><dd>{trade.tradeId}</dd></div><div><dt>ISIN</dt><dd>{trade.isin}</dd></div><div><dt>Buy / sell</dt><dd>{trade.buySell}</dd></div><div><dt>Currency</dt><dd>{trade.currency}</dd></div>
     <div><dt>Settlement date</dt><dd>{formatDate(trade.settlementDate)}</dd></div><div><dt>Amount</dt><dd>{formatDecimal(trade.amount)}</dd></div><div><dt>Quantity</dt><dd>{formatDecimal(trade.quantity)}</dd></div><div><dt>Price</dt><dd>{formatDecimal(trade.price)}</dd></div>
   </dl>}</section>;

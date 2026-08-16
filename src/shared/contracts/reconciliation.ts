@@ -11,6 +11,8 @@ export const ReconciliationTradeSchema = z.object({
 export const ReconciliationResultSchema = z.object({
   id: z.string().min(1), status: ReconciliationStatusSchema, reason: z.enum(['amount-mismatch', 'quantity-mismatch', 'amount-and-quantity-mismatch']).nullable(),
   reviewed: z.boolean().default(false), comment: z.string().nullable().default(null),
+  // Analyst override for `reason`, which remains the engine-derived value.
+  mismatchReason: z.string().nullable().default(null),
   brokerTrade: ReconciliationTradeSchema.nullable(), otMurexTrade: ReconciliationTradeSchema.nullable()
 }).readonly();
 export const ReconciliationMetricsSchema = z.object({ total: z.number().int().nonnegative(), matched: z.number().int().nonnegative(), unresolved: z.number().int().nonnegative(), reconciliationRate: z.number().min(0).max(1), unresolvedRate: z.number().min(0).max(1) }).readonly();
@@ -46,6 +48,9 @@ export const ResultReviewResultSchema = result(z.object({ workspace: Reconciliat
 export const ResolutionCommentSchema = z.string().max(2_000);
 export const ResultCommentSaveRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid(), resultId: z.string().min(1), comment: ResolutionCommentSchema }).strict();
 export const ResultCommentSaveResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
+export const AnalystMismatchReasonSchema = z.string().max(200);
+export const ResultMismatchReasonSaveRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid(), resultId: z.string().min(1), mismatchReason: AnalystMismatchReasonSchema }).strict();
+export const ResultMismatchReasonSaveResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
 export const BrokerPreviewRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid(), resultId: z.string().min(1) }).strict();
 export const BrokerEmailDraftRowSchema = z.object({
   tradeId: z.string().min(1), isin: z.string().min(1), buySell: z.enum(['buy', 'sell']), amount: z.string().min(1), quantity: z.string().min(1),
@@ -70,7 +75,7 @@ export const ReportWorkerReceiptSchema = z.object({
 }).readonly();
 export const ReconciliationProgressSchema = z.object({ runId: z.string().uuid().optional(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), phase: z.enum(['started', 'completed', 'failed']) }).readonly();
 
-export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', saveComment: 'comment.save.v1', previewBroker: 'broker.preview.v1', saveReport: 'report.save.v1', progress: 'reconciliation.progress.v1' } as const;
+export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', saveComment: 'comment.save.v1', saveMismatchReason: 'mismatch-reason.save.v1', previewBroker: 'broker.preview.v1', saveReport: 'report.save.v1', progress: 'reconciliation.progress.v1' } as const;
 export type ReconciliationWorkspace = z.infer<typeof ReconciliationWorkspaceSchema>;
 export type ReconciliationRunAggregate = z.infer<typeof ReconciliationRunAggregateSchema>;
 export type ReconciliationRunSummary = z.infer<typeof ReconciliationRunSummarySchema>;
@@ -80,6 +85,8 @@ export type RunWorkspaceGetResult = z.infer<typeof RunWorkspaceGetResultSchema>;
 export type ResultReviewResult = z.infer<typeof ResultReviewResultSchema>;
 export type ResultCommentSaveRequest = z.infer<typeof ResultCommentSaveRequestSchema>;
 export type ResultCommentSaveResult = z.infer<typeof ResultCommentSaveResultSchema>;
+export type ResultMismatchReasonSaveRequest = z.infer<typeof ResultMismatchReasonSaveRequestSchema>;
+export type ResultMismatchReasonSaveResult = z.infer<typeof ResultMismatchReasonSaveResultSchema>;
 export type BrokerEmailDraft = z.infer<typeof BrokerEmailDraftSchema>;
 export type BrokerPreviewResult = z.infer<typeof BrokerPreviewResultSchema>;
 export type RunReportV1 = z.infer<typeof RunReportV1Schema>;

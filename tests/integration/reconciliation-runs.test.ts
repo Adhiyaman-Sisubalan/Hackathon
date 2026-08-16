@@ -11,7 +11,7 @@ import { BrokerPreviewNotEligibleError, RunsService, ResultCommentNotEligibleErr
 import { createReportWorker, type ReportWorker } from '../../src/main/workers/report-worker-client.js';
 
 const directories: string[] = [];
-const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql'];
+const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 const reportSheetNames = ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
@@ -85,7 +85,7 @@ describe('persisted reconciliation runs', () => {
       .run(runId, '2026-08-15T00:00:00.000Z');
     database.migrate(migrations);
     expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total, unresolved_rate AS unresolvedRate FROM runs').get()).toEqual({ id: runId, asOfDate: '2026-08-15', total: 5, unresolvedRate: .4 });
-    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
     const runs = new RunsService(database, initialSeed);
     runs.seed();
     expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 5, matched: 3, unresolved: 2, reconciliationRate: .6, unresolvedRate: .4 } });

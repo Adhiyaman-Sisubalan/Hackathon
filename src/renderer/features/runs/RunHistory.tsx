@@ -6,6 +6,11 @@ import styles from './RunHistory.module.css';
 type Destination = 'runs' | 'exceptions';
 type HistoryError = { message: string; retryable: boolean };
 
+function formatDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
+
 export function RunHistory({ destination, api, onOpened, onStale, onOverview }: {
   destination: Destination;
   api?: Pick<ReconciliationApi['runs'], 'list' | 'getWorkspace'>;
@@ -54,15 +59,26 @@ export function RunHistory({ destination, api, onOpened, onStale, onOverview }: 
     ? 'No completed reconciliation runs yet. Open Overview to create one.'
     : 'No completed reconciliation runs are available. Open Overview to create one.';
   return <section aria-labelledby={`${destination}-title`} className={styles.history}>
-    <div className={styles.heading}><div><p className={styles.eyebrow}>{destination === 'runs' ? 'Run history' : 'Current unresolved work'}</p><h1 id={`${destination}-title`}>{title}</h1></div></div>
-    {runs === undefined && !error && <p role="status">Loading completed reconciliation runs…</p>}
-    {error && <div className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button ref={retryRef} type="button" onClick={() => void loadHistory()}>Retry run history</button>}</div>}
-    {runs?.length === 0 && <div className={styles.empty}><p>{empty}</p><button type="button" onClick={onOverview}>Go to Overview</button></div>}
-    {destination === 'exceptions' && runs && runs.length > 0 && opening && <p role="status">Opening the latest completed run…</p>}
+    <div className={styles.heading}>
+      <p className={styles.eyebrow}>{destination === 'runs' ? 'Run history' : 'Current unresolved work'}</p>
+      <h1 id={`${destination}-title`}>{title}</h1>
+    </div>
+    {runs === undefined && !error && <p role="status" className={styles.loading}>Loading completed reconciliation runs…</p>}
+    {error && <div className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button ref={retryRef} type="button" className={styles.secondary} onClick={() => void loadHistory()}>Retry run history</button>}</div>}
+    {runs?.length === 0 && <div className={styles.empty}><p>{empty}</p><button type="button" className={styles.secondary} onClick={onOverview}>Go to Overview</button></div>}
+    {destination === 'exceptions' && runs && runs.length > 0 && opening && <p role="status" className={styles.loading}>Opening the latest completed run…</p>}
     {destination === 'runs' && runs && runs.length > 0 && <ol className={styles.list} aria-label="Completed reconciliation runs">{runs.map((run) => <li key={run.runId}>
-      <button type="button" onClick={() => void openRun(run.runId)} disabled={opening === run.runId} aria-label={`Open run ${run.runId}`}>
-        <span>Run {run.runId}</span><span>As-of {run.asOfDate}</span><span>Completed {new Date(run.completedAt).toLocaleString()}</span>
-        <span>Total {run.metrics.total}</span><span>Matched {run.metrics.matched}</span><span>Unresolved {run.metrics.unresolved}</span><span>Rate {Math.round(run.metrics.reconciliationRate * 100)}%</span>
+      <button type="button" className={styles.runCard} onClick={() => void openRun(run.runId)} disabled={opening === run.runId} aria-label={`Open run ${run.runId}`}>
+        <span className={styles.runIdentity}>
+          <span className={styles.runDate}>{formatDate(run.asOfDate)}</span>
+          <span className={styles.runMeta}>Completed {new Date(run.completedAt).toLocaleString()} · {run.runId.slice(0, 8)}</span>
+        </span>
+        <span className={styles.runStats}>
+          <span className={styles.stat}><span className={styles.statLabel}>Total</span><span className={styles.statValue}>{run.metrics.total}</span></span>
+          <span className={styles.stat}><span className={styles.statLabel}>Matched</span><span className={styles.statValue}>{run.metrics.matched}</span></span>
+          <span className={styles.stat}><span className={styles.statLabel}>Unresolved</span><span className={`${styles.statValue} ${run.metrics.unresolved > 0 ? styles.attention : ''}`}>{run.metrics.unresolved}</span></span>
+        </span>
+        <span className={`${styles.rate} ${run.metrics.unresolved === 0 ? styles.clean : ''}`}>{Math.round(run.metrics.reconciliationRate * 100)}%</span>
       </button>
     </li>)}</ol>}
   </section>;

@@ -81,7 +81,7 @@ describe('reconciliation IPC boundary', () => {
   it('exposes the strict sender-validated comment command and hides persistence details', async () => {
     const handlers = new Map<string, (event: any, payload: unknown) => any>();
     const runId = '11111111-1111-4111-8111-111111111111';
-    const workspace = { runId, asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 0, unresolved: 1, reconciliationRate: 0, unresolvedRate: 1 }, anomaly: { kind: 'warning' as const, currentUnresolvedRate: 1, historyCount: 5 as const, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 1 }, results: [{ id: 'logical-result', status: 'unmatched' as const, reason: 'amount-mismatch' as const, reviewed: false, comment: 'Saved value', brokerTrade: null, otMurexTrade: null }] };
+    const workspace = { runId, asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 0, unresolved: 1, reconciliationRate: 0, unresolvedRate: 1 }, anomaly: { kind: 'warning' as const, currentUnresolvedRate: 1, historyCount: 5 as const, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 1 }, results: [{ id: 'logical-result', status: 'unmatched' as const, reason: 'amount-mismatch' as const, reviewed: false, comment: 'Saved value', mismatchReason: null, brokerTrade: null, otMurexTrade: null }] };
     const saveResultComment = vi.fn(() => workspace);
     registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, { run: () => workspace, saveResultComment }, () => true);
     const event = { sender: { send: vi.fn() } };

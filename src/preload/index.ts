@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { DashboardChannels, DashboardGetResultSchema } from '../shared/contracts/dashboard.js';
-import { BrokerPreviewResultSchema, ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunResultSchema, ReportSaveResultSchema, ResultCommentSaveResultSchema, ResultReviewResultSchema, RunWorkspaceGetResultSchema, RunsListResultSchema } from '../shared/contracts/reconciliation.js';
+import { BrokerPreviewResultSchema, ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunResultSchema, ReportSaveResultSchema, ResultCommentSaveResultSchema, ResultMismatchReasonSaveResultSchema, ResultReviewResultSchema, RunWorkspaceGetResultSchema, RunsListResultSchema } from '../shared/contracts/reconciliation.js';
 import type { ReconciliationApi } from '../shared/contracts/preload.js';
 
 const api: ReconciliationApi = {
@@ -37,6 +37,10 @@ const api: ReconciliationApi = {
     async saveComment(runId, resultId, comment) {
       const response: unknown = await ipcRenderer.invoke(ReconciliationChannels.saveComment, { version: 1, runId, resultId, comment });
       return ResultCommentSaveResultSchema.parse(response);
+    },
+    async saveMismatchReason(runId, resultId, mismatchReason) {
+      const response: unknown = await ipcRenderer.invoke(ReconciliationChannels.saveMismatchReason, { version: 1, runId, resultId, mismatchReason });
+      return ResultMismatchReasonSaveResultSchema.parse(response);
     },
     async previewBrokerEmail(runId, resultId) {
       const response: unknown = await ipcRenderer.invoke(ReconciliationChannels.previewBroker, { version: 1, runId, resultId });

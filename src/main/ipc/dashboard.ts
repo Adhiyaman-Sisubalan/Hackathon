@@ -4,8 +4,18 @@ import { DashboardChannels, DashboardGetRequestSchema, DashboardGetResultSchema,
 export interface DashboardQuery { latestSummary(): DashboardSummary | null; }
 export type SenderValidator = (event: IpcMainInvokeEvent) => boolean;
 
+// Compared as parsed URLs, not raw strings: the Vite dev server constant is origin-only
+// ("http://localhost:5173") while the loaded frame reports it normalised with a trailing
+// slash, so a string equality check rejects every request in `npm start`.
+function canonicalUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try { return new URL(value).href; } catch { return undefined; }
+}
+
 export function isTrustedRendererSender(event: IpcMainInvokeEvent, expectedUrl: string): boolean {
-  return event.senderFrame?.parent === null && event.senderFrame.url === expectedUrl;
+  if (event.senderFrame?.parent !== null) return false;
+  const expected = canonicalUrl(expectedUrl);
+  return expected !== undefined && canonicalUrl(event.senderFrame.url) === expected;
 }
 
 export function registerDashboardHandlers(ipcMain: Pick<IpcMain, 'handle'>, query: DashboardQuery, validSender: SenderValidator): void {

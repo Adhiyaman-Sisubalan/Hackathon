@@ -1,8 +1,52 @@
-.shell { min-height: 100vh; background: var(--surface); color: var(--text); }
-.header { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border); }
-.productName { font-weight: 700; }
-.navigation { display: flex; gap: var(--space-1); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border); }
-.navigation button { border: 1px solid transparent; background: transparent; color: var(--text-muted); padding: var(--space-2) var(--space-3); }
-.navigation button[aria-current='page'] { border-color: var(--accent); color: var(--text); font-weight: 650; }
-.content { max-width: 960px; padding: var(--space-6) var(--space-5); }
-.destination { border-left: 3px solid var(--border); padding-left: var(--space-4); }
+/* Desktop app frame: the chrome stays put and only the content region scrolls.
+   The row track and the `min-height: 0` below are load-bearing — without them the grid
+   items keep their auto minimum, grow past the viewport, and get clipped instead of scrolled. */
+.shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; overflow: hidden; background: var(--canvas); color: var(--text); }
+
+.sidebar { display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-5); min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-3) var(--space-4); background: var(--surface); border-right: 1px solid var(--border); }
+.brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); }
+.mark { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-control); background: var(--accent); color: var(--accent-text); font-size: .8125rem; font-weight: 700; }
+.brandName { font-size: .9375rem; font-weight: 650; letter-spacing: -.01em; }
+
+.navigation { display: grid; align-content: start; gap: 2px; }
+.navLabel { margin: 0 0 var(--space-1); padding: 0 var(--space-2); color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.navItem { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-2) var(--space-2); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); font-weight: 550; text-align: left; transition: background var(--motion-fast), color var(--motion-fast); }
+.navItem:hover { background: var(--surface-hover); color: var(--text); }
+.navItem[aria-current='page'] { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+.navIcon { flex: 0 0 auto; width: 1.125rem; height: 1.125rem; }
+.sidebarFoot { margin: 0; padding: 0 var(--space-2); color: var(--text-subtle); font-size: .75rem; }
+
+.frame { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); height: 3.5rem; padding: 0 var(--space-6); border-bottom: 1px solid var(--border); background: var(--surface); }
+.crumbs { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: .875rem; font-weight: 600; }
+.crumbRoot { color: var(--text-subtle); font-weight: 500; }
+.crumbSeparator { color: var(--text-subtle); }
+.topbarMeta { display: flex; align-items: center; gap: var(--space-4); }
+.environment { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--text-subtle); font-size: .75rem; white-space: nowrap; }
+.environmentDot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--success); }
+
+.themeToggle { display: flex; gap: 2px; padding: 2px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-pill); }
+.themeOption { padding: var(--space-1) var(--space-3); color: var(--text-subtle); background: transparent; border: 0; border-radius: var(--radius-pill); font-size: .6875rem; font-weight: 600; transition: background var(--motion-fast), color var(--motion-fast); }
+.themeOption:hover { color: var(--text); }
+.themeOption[aria-pressed='true'] { color: var(--text); background: var(--surface); box-shadow: var(--shadow-sm); }
+
+@media (forced-colors: active) {
+  .themeOption[aria-pressed='true'] { background: Highlight; color: HighlightText; }
+}
+
+.content { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--space-6); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; overflow: visible; }
+  .sidebar { height: auto; overflow: visible; grid-template-rows: none; grid-auto-flow: column; align-items: center; justify-content: start; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-right: 0; border-bottom: 1px solid var(--border); }
+  .content { overflow-y: visible; }
+  .navigation { grid-auto-flow: column; gap: var(--space-1); }
+  .navLabel, .sidebarFoot { display: none; }
+  .topbar { padding: 0 var(--space-4); }
+  .content { padding: var(--space-5) var(--space-4); }
+}
+
+@media (forced-colors: active) {
+  .navItem[aria-current='page'] { background: Highlight; color: HighlightText; }
+  .navItem[aria-current='page'] .navIcon { color: HighlightText; }
+}

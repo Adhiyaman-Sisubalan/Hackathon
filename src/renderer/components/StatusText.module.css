@@ -1,5 +1,12 @@
-.status { align-items: center; display: inline-flex; font-weight: 600; gap: var(--space-1); white-space: nowrap; }
-.marker { align-items: center; border: 1px solid currentColor; display: inline-flex; font-size: .75rem; height: 1rem; justify-content: center; line-height: 1; width: 1rem; }
-.matched { color: var(--success); }
-.unmatched { color: var(--warning); }
-.missing-from-broker, .missing-from-ot-murex { color: var(--danger); }
+/* Status is never colour alone: every pill carries its label plus a distinct marker glyph. */
+.status { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-2) 2px 3px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: var(--radius-pill); font-size: .6875rem; font-weight: 650; line-height: 1rem; white-space: nowrap; }
+.marker { display: grid; place-items: center; flex: 0 0 auto; width: .875rem; height: .875rem; border-radius: 50%; background: color-mix(in srgb, currentColor 18%, transparent); font-size: .5625rem; line-height: 1; }
+
+.matched { color: var(--success); background: var(--success-soft); }
+.unmatched { color: var(--warning); background: var(--warning-soft); }
+.missing-from-broker, .missing-from-ot-murex { color: var(--danger); background: var(--danger-soft); }
+
+@media (forced-colors: active) {
+  .status { border-color: CanvasText; background: Canvas; color: CanvasText; }
+  .marker { border: 1px solid CanvasText; background: Canvas; }
+}

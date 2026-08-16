@@ -10,10 +10,10 @@ const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000
 const otTrade = { source: 'ot-murex' as const, tradeId: 'OT-9', isin: 'GB0000000002', buySell: 'sell' as const, currency: 'GBP', settlementDate: '2026-08-16', amount: '9.25', quantity: '2', price: '4.625' };
 
 function workspace(results: ReconciliationWorkspace['results'] = [
-  { id: 'matched', status: 'matched', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
-  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', reviewed: false, comment: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
-  { id: 'missing-broker', status: 'missing-from-broker', reason: null, reviewed: false, comment: null, brokerTrade: null, otMurexTrade: otTrade },
-  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: null }
+  { id: 'matched', status: 'matched', reason: null, reviewed: false, comment: null, mismatchReason: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
+  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', reviewed: false, comment: null, mismatchReason: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
+  { id: 'missing-broker', status: 'missing-from-broker', reason: null, reviewed: false, comment: null, mismatchReason: null, brokerTrade: null, otMurexTrade: otTrade },
+  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, reviewed: false, comment: null, mismatchReason: null, brokerTrade, otMurexTrade: null }
 ]): ReconciliationWorkspace {
   const matched = results.filter((result) => result.status === 'matched').length;
   return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: results.length, matched, unresolved: results.length - matched, reconciliationRate: matched / results.length, unresolvedRate: (results.length - matched) / results.length }, anomaly: { kind: 'warning', currentUnresolvedRate: .75, historyCount: 5, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: results.filter((result) => result.status === 'unmatched' && result.reviewed).length, totalUnmatched: results.filter((result) => result.status === 'unmatched').length }, results };
@@ -57,7 +57,7 @@ describe('Results workspace table', () => {
 
   it('retains summary and controls for an all-resolved run', () => {
     render(<Results initialSelected={['unmatched', 'missing-from-broker', 'missing-from-ot-murex']} workspace={workspace([
-      { id: 'one', status: 'matched', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
+      { id: 'one', status: 'matched', reason: null, reviewed: false, comment: null, mismatchReason: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
     ])} />);
     expect((screen.getByLabelText('Matched') as HTMLInputElement).checked).toBe(false);
     expect(screen.getByText('Showing 0 results. All results resolved.')).toBeTruthy();
@@ -79,7 +79,7 @@ describe('Results workspace table', () => {
   it('keeps table feedback available for a 1,000-result fixture without virtualization', () => {
     const results = Array.from({ length: 1000 }, (_, index) => ({
       id: `result-${index}`, status: index % 2 === 0 ? 'matched' as const : 'unmatched' as const,
-      reason: index % 2 === 0 ? null : 'amount-mismatch' as const, reviewed: false, comment: null,
+      reason: index % 2 === 0 ? null : 'amount-mismatch' as const, reviewed: false, comment: null, mismatchReason: null,
       brokerTrade: { ...brokerTrade, tradeId: `BRK-${index}`, amount: String(index + 1) }, otMurexTrade: null
     }));
     render(<Results workspace={workspace(results)} initialSelected={[]} />);
@@ -226,7 +226,7 @@ describe('Results workspace table', () => {
     let resolveSecond!: (value: any) => void;
     const first = new Promise<never>((_resolve, reject) => { rejectFirst = reject; });
     const second = new Promise<any>((resolve) => { resolveSecond = resolve; });
-    const extra = { id: 'unmatched-2', status: 'unmatched' as const, reason: 'quantity-mismatch' as const, reviewed: false, comment: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-9' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex' as const, tradeId: 'OT-10' } };
+    const extra = { id: 'unmatched-2', status: 'unmatched' as const, reason: 'quantity-mismatch' as const, reviewed: false, comment: null, mismatchReason: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-9' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex' as const, tradeId: 'OT-10' } };
     const reviewResult = vi.fn((_runId: string, resultId: string) => resultId === 'unmatched' ? first : second);
     window.reconciliation = { runs: { reviewResult } } as never;
     render(<Results workspace={workspace([...workspace().results, extra])} />);
@@ -300,6 +300,53 @@ describe('Results workspace table', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
     expect(screen.getByText('Broker details are unavailable for this Result.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Preview broker email' })).toBeNull();
+  });
+
+  it('edits the mismatch reason in the grid, showing the engine finding until an analyst overrides it', async () => {
+    const initial = workspace();
+    const updated = workspace(initial.results.map((result) => result.id === 'unmatched' ? { ...result, mismatchReason: 'FX rate applied late' } : result));
+    const saveMismatchReason = vi.fn(async () => ({ ok: true as const, data: { workspace: updated } }));
+    window.reconciliation = { runs: { saveMismatchReason } } as never;
+    const changed = vi.fn();
+    render(<Results workspace={initial} onWorkspaceChanged={changed} />);
+
+    const field = screen.getByRole('textbox', { name: 'Mismatch reason for BRK-8' }) as HTMLInputElement;
+    expect(field.value).toBe('');
+    expect(field.placeholder).toBe('amount mismatch');
+
+    fireEvent.change(field, { target: { value: 'FX rate applied late' } });
+    fireEvent.blur(field);
+    await waitFor(() => expect(saveMismatchReason).toHaveBeenCalledWith(initial.runId, 'unmatched', 'FX rate applied late'));
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(updated));
+    expect(screen.getByText('Saved')).toBeTruthy();
+  });
+
+  it('never writes an unchanged mismatch reason and keeps matched results read-only', async () => {
+    const saveMismatchReason = vi.fn(async () => ({ ok: true as const, data: { workspace: workspace() } }));
+    window.reconciliation = { runs: { saveMismatchReason } } as never;
+    render(<Results workspace={workspace()} />);
+
+    // Focusing and leaving without editing must not persist anything.
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Mismatch reason for BRK-8' }));
+    await waitFor(() => expect(saveMismatchReason).not.toHaveBeenCalled());
+
+    // Matched results have no editor at all (BRK-7 is shared with the missing-from-OT/MUREX row, so scope by row).
+    const matchedRow = screen.getAllByRole('row').find((row) => within(row).queryByText('Matched'));
+    expect(matchedRow).toBeTruthy();
+    expect(within(matchedRow!).queryByRole('textbox')).toBeNull();
+  });
+
+  it('reports a failed mismatch reason save against its own row and keeps the typed value', async () => {
+    const saveMismatchReason = vi.fn(async () => ({ ok: false as const, error: { code: 'PERSISTENCE_FAILED' as const, message: 'The mismatch reason could not be saved. Please retry.', retryable: true } }));
+    window.reconciliation = { runs: { saveMismatchReason } } as never;
+    render(<Results workspace={workspace()} />);
+
+    const field = screen.getByRole('textbox', { name: 'Mismatch reason for BRK-8' }) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'Broker booked twice' } });
+    fireEvent.blur(field);
+    expect((await screen.findByRole('alert')).textContent).toContain('The mismatch reason could not be saved.');
+    expect(field.value).toBe('Broker booked twice');
+    expect(field.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('disables report saving with the exact outstanding unmatched review count', () => {

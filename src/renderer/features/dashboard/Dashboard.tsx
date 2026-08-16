@@ -6,9 +6,22 @@ import { dashboardState, type DashboardError } from './dashboard-model.js';
 import { SummaryStrip } from '../../components/SummaryStrip.js';
 import styles from './Dashboard.module.css';
 
-const supportedDates = new Set(['2026-08-13', '2026-08-14', '2026-08-15']);
+// Mirrors reconciliationScenarios.supportedDates; fixtures are main-process seed data and
+// are deliberately not bundled into the renderer.
+const seededDates = ['2026-08-13', '2026-08-14', '2026-08-15', '2026-08-17'] as const;
+const supportedDates = new Set<string>(seededDates);
 type DashboardProps = { api?: ReconciliationApi['dashboard']; reconciliationApi?: ReconciliationApi['reconciliation']; onCompleted?: (workspace: ReconciliationWorkspace) => void };
 interface RunError { message: string; field?: 'asOfDate'; }
+
+function formatDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
+
+function formatCompletedAt(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
 
 export function Dashboard({ api, reconciliationApi, onCompleted }: DashboardProps) {
   const [summary, setSummary] = useState<DashboardSummary | null | undefined>(undefined);
@@ -37,6 +50,10 @@ export function Dashboard({ api, reconciliationApi, onCompleted }: DashboardProp
     setProgress(event.phase === 'started' ? 'Reconciliation is running…' : event.phase === 'completed' ? 'Reconciliation completed.' : 'Reconciliation could not be completed.');
   }), [runApi, asOfDate]);
   const state = dashboardState(summary, error);
+  const chooseDate = (next: string) => {
+    setAsOfDate(next);
+    if (runError?.field === 'asOfDate') setRunError(undefined);
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setRunError(undefined); setProgress(undefined);
@@ -53,16 +70,36 @@ export function Dashboard({ api, reconciliationApi, onCompleted }: DashboardProp
     finally { setRunning(false); }
   };
   return <section aria-labelledby="dashboard-title" className={styles.dashboard}>
-    <div className={styles.heading}><div><p className={styles.eyebrow}>Overview</p><h1 id="dashboard-title">Dashboard</h1></div></div>
-    {state.kind === 'loading' && <p role="status">Loading latest reconciliation summary…</p>}
-    {state.kind === 'first-use' && <p>No reconciliation has been completed yet. Choose an as-of date and run reconciliation to create your first run.</p>}
-    {state.kind === 'error' && <div role="alert" className={styles.error}><p>{state.message}</p>{state.retryable && <button ref={retryRef} type="button" onClick={() => void load()}>Retry dashboard query</button>}</div>}
+    <div className={styles.heading}>
+      <div>
+        <p className={styles.eyebrow}>Daily operations</p>
+        <h1 id="dashboard-title">Dashboard</h1>
+      </div>
+      {state.kind === 'summary' && <p className={styles.headingMeta}>Latest run completed {formatCompletedAt(state.summary.completedAt)}</p>}
+    </div>
+    {state.kind === 'loading' && <p role="status" className={styles.loading}>Loading latest reconciliation summary…</p>}
+    {state.kind === 'first-use' && <div className={styles.firstUse}><p>No reconciliation has been completed yet. Choose an as-of date and run reconciliation to create your first run.</p></div>}
+    {state.kind === 'error' && <div role="alert" className={styles.error}><p>{state.message}</p>{state.retryable && <button ref={retryRef} type="button" className={styles.secondary} onClick={() => void load()}>Retry dashboard query</button>}</div>}
     {state.kind === 'summary' && <SummaryStrip summary={state.summary} />}
-    <form className={styles.runForm} onSubmit={(event) => void submit(event)} noValidate>
-      <label htmlFor="as-of-date">As-of date</label>
-      <div className={styles.controls}><input ref={dateRef} id="as-of-date" type="date" value={asOfDate} onChange={(event) => { setAsOfDate(event.target.value); if (runError?.field === 'asOfDate') setRunError(undefined); }} aria-describedby={runError?.field === 'asOfDate' ? 'as-of-date-error' : undefined} aria-invalid={runError?.field === 'asOfDate'} disabled={running} /><button type="submit" className={styles.primary} disabled={running}>{running ? 'Running reconciliation…' : 'Run reconciliation'}</button></div>
-      {runError && <p id={runError.field === 'asOfDate' ? 'as-of-date-error' : undefined} role="alert" className={styles.error}>{runError.message}</p>}
-      <p className={styles.note} aria-live="polite">{progress ?? 'Select a seeded business date to create a persisted reconciliation run.'}</p>
-    </form>
+    <section className={styles.runPanel} aria-labelledby="run-panel-title">
+      <div className={styles.panelHead}>
+        <h2 id="run-panel-title">Start a reconciliation</h2>
+        <p>Seeded broker and OT/MUREX data is available for three business dates.</p>
+      </div>
+      <form className={styles.runForm} onSubmit={(event) => void submit(event)} noValidate>
+        <div className={styles.field}>
+          <label htmlFor="as-of-date">As-of date</label>
+          <div className={styles.controls}>
+            <input ref={dateRef} id="as-of-date" type="date" value={asOfDate} onChange={(event) => chooseDate(event.target.value)} aria-describedby={runError?.field === 'asOfDate' ? 'as-of-date-error' : undefined} aria-invalid={runError?.field === 'asOfDate'} disabled={running} />
+            <button type="submit" className={styles.primary} disabled={running}>{running ? 'Running reconciliation…' : 'Run reconciliation'}</button>
+          </div>
+        </div>
+        <div className={styles.presets}>
+          {seededDates.map((date) => <button key={date} type="button" className={styles.chip} aria-pressed={asOfDate === date} disabled={running} onClick={() => chooseDate(date)}>{formatDate(date)}</button>)}
+        </div>
+        {runError && <p id={runError.field === 'asOfDate' ? 'as-of-date-error' : undefined} role="alert" className={styles.error}>{runError.message}</p>}
+        <p className={styles.note} aria-live="polite">{progress ?? 'Select a seeded business date to create a persisted reconciliation run.'}</p>
+      </form>
+    </section>
   </section>;
 }

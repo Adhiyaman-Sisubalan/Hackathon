@@ -23,4 +23,14 @@ describe('dashboard IPC boundary', () => {
     expect(isTrustedRendererSender({ senderFrame: { parent: {}, url: expectedUrl } } as never, expectedUrl)).toBe(false);
     expect(isTrustedRendererSender({ senderFrame: { parent: null, url: expectedUrl } } as never, expectedUrl)).toBe(true);
   });
+
+  it('trusts the dev-server frame whose URL only differs from the configured origin by normalisation', () => {
+    // Electron Forge exposes the dev server as an origin with no path; the loaded frame
+    // reports it with a trailing slash. Both must resolve to the same trusted sender.
+    const devServerUrl = 'http://localhost:5173';
+    expect(isTrustedRendererSender({ senderFrame: { parent: null, url: 'http://localhost:5173/' } } as never, devServerUrl)).toBe(true);
+    expect(isTrustedRendererSender({ senderFrame: { parent: null, url: 'http://localhost:5174/' } } as never, devServerUrl)).toBe(false);
+    expect(isTrustedRendererSender({ senderFrame: { parent: null, url: 'http://localhost:5173/evil.html' } } as never, devServerUrl)).toBe(false);
+    expect(isTrustedRendererSender({ senderFrame: { parent: null, url: 'not a url' } } as never, devServerUrl)).toBe(false);
+  });
 });

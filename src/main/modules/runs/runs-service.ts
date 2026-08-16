@@ -19,6 +19,7 @@ export class UnsupportedDateError extends Error { readonly code = 'UNAVAILABLE';
 export class ResultNotFoundError extends Error { readonly code = 'RESULT_NOT_FOUND'; constructor() { super('This result is no longer available.'); } }
 export class ResultNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only unmatched results can be reviewed.'); } }
 export class ResultCommentNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Comments are only available for unresolved results.'); } }
+export class ResultMismatchReasonNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Mismatch reasons are only available for unresolved results.'); } }
 export class BrokerPreviewNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only broker-backed unmatched results can be previewed.'); } }
 export class BrokerUnavailableError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Broker details are unavailable for this result.'); } }
 export class ReportNotEligibleError extends Error { readonly code = 'REPORT_INELIGIBLE'; constructor(readonly outstanding: number) { super(`${outstanding} unmatched ${outstanding === 1 ? 'result remains' : 'results remain'} to review before saving the verified report.`); } }
@@ -55,6 +56,13 @@ export class RunsService {
     const outcome = this.database.saveResultComment(runId, resultId, comment === '' ? null : comment, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
     if (outcome === 'not-found') throw new ResultNotFoundError();
     if (outcome === 'not-eligible') throw new ResultCommentNotEligibleError();
+    return outcome;
+  }
+
+  saveResultMismatchReason(runId: string, resultId: string, mismatchReason: string): ReconciliationWorkspace {
+    const outcome = this.database.saveResultMismatchReason(runId, resultId, mismatchReason.trim() === '' ? null : mismatchReason, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
+    if (outcome === 'not-found') throw new ResultNotFoundError();
+    if (outcome === 'not-eligible') throw new ResultMismatchReasonNotEligibleError();
     return outcome;
   }
 
