@@ -38,11 +38,20 @@ async function runAcceptance(): Promise<void> {
     await page.keyboard.press('Enter');
     await page.getByText('Broker evidence').waitFor();
     await page.getByText('OT/MUREX evidence').waitFor();
-    await page.getByText('1 / 1', { exact: true }).waitFor();
+    await page.getByText('1 / 2', { exact: true }).waitFor();
     const comment = page.getByRole('textbox', { name: 'Comment' });
     await comment.fill('Awaiting broker confirmation.');
     await page.getByRole('button', { name: 'Save comment' }).click();
     await page.getByText('Comment saved.').waitFor();
+    const preview = page.getByRole('button', { name: 'Preview broker email' });
+    await preview.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('heading', { name: 'Broker email draft' }).waitFor();
+    assert.equal(await page.getByLabel('Draft status').textContent(), 'Draft');
+    await page.getByRole('cell', { name: 'Awaiting broker confirmation.' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Send' }).count(), 0);
+    await page.getByRole('button', { name: 'Back to detail' }).click();
+    await preview.waitFor();
     await page.setViewportSize({ width: 700, height: 900 });
     const openInspector = page.getByRole('button', { name: 'Open inspector' });
     await openInspector.click();
@@ -60,7 +69,7 @@ async function runAcceptance(): Promise<void> {
     await historicalRun.focus();
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Results' }).waitFor();
-    await page.getByText('1 / 1', { exact: true }).waitFor();
+    await page.getByText('1 / 2', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Select BRK-202' }).click();
     assert.equal(await page.getByRole('textbox', { name: 'Comment' }).inputValue(), 'Awaiting broker confirmation.');
 

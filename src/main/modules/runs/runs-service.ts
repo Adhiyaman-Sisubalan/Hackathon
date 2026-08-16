@@ -1,7 +1,7 @@
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import { reconciliationMetricsFor } from '../../../domain/metrics/reconciliation-metrics.js';
 import { reconciliationBootstrapConfig } from '../../bootstrap/reconciliation-config.js';
-import { ReconciliationRunAggregateSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { type BrokerEmailDraft, ReconciliationRunAggregateSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError, reconcileTrades, type ReconciliationResult } from '../../../domain/reconciliation/reconciliation.js';
 import type { Migration, SqliteDatabase } from '../../adapters/sqlite/database.js';
 
@@ -16,6 +16,8 @@ export class UnsupportedDateError extends Error { readonly code = 'UNAVAILABLE';
 export class ResultNotFoundError extends Error { readonly code = 'RESULT_NOT_FOUND'; constructor() { super('This result is no longer available.'); } }
 export class ResultNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only unmatched results can be reviewed.'); } }
 export class ResultCommentNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Comments are only available for unresolved results.'); } }
+export class BrokerPreviewNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only broker-backed unmatched results can be previewed.'); } }
+export class BrokerUnavailableError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Broker details are unavailable for this result.'); } }
 
 export class RunsService {
   private active = false;
@@ -48,6 +50,14 @@ export class RunsService {
     const outcome = this.database.saveResultComment(runId, resultId, comment === '' ? null : comment, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
     if (outcome === 'not-found') throw new ResultNotFoundError();
     if (outcome === 'not-eligible') throw new ResultCommentNotEligibleError();
+    return outcome;
+  }
+
+  previewBrokerEmail(runId: string, resultId: string): BrokerEmailDraft {
+    const outcome = this.database.previewBrokerEmail(runId, resultId);
+    if (outcome === 'not-found') throw new ResultNotFoundError();
+    if (outcome === 'not-eligible') throw new BrokerPreviewNotEligibleError();
+    if (outcome === 'no-broker') throw new BrokerUnavailableError();
     return outcome;
   }
 

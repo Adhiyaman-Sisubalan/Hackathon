@@ -6,10 +6,10 @@ import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios
 import { initialSeed } from '../../fixtures/initial-seed.js';
 import { SqliteDatabase } from '../../src/main/adapters/sqlite/database.js';
 import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconciliation.js';
-import { ResultCommentNotEligibleError, RunsService, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
+import { BrokerPreviewNotEligibleError, RunsService, ResultCommentNotEligibleError, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
 
 const directories: string[] = [];
-const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql'];
+const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
@@ -40,10 +40,10 @@ describe('persisted reconciliation runs', () => {
     const first = runs.run('2026-08-15');
     const second = runs.run('2026-08-15');
     expect(first.metrics).toEqual({ total: 6, matched: 2, unresolved: 4, reconciliationRate: 1 / 3, unresolvedRate: 2 / 3 });
-    expect(first.results.map((result) => result.status)).toEqual(['matched', 'unmatched', 'matched', 'missing-from-ot-murex', 'missing-from-ot-murex', 'missing-from-broker']);
+    expect(first.results.map((result) => result.status)).toEqual(['matched', 'unmatched', 'matched', 'missing-from-ot-murex', 'unmatched', 'missing-from-broker']);
     expect(second.runId).not.toBe(first.runId);
     expect(database.db.prepare('SELECT count(*) AS count FROM runs').get()).toEqual({ count: 2 });
-    expect(database.db.prepare('SELECT count(*) AS count FROM source_trades WHERE run_id = ?').get(first.runId)).toEqual({ count: 9 });
+    expect(database.db.prepare('SELECT count(*) AS count FROM source_trades WHERE run_id = ?').get(first.runId)).toEqual({ count: 10 });
     expect(database.db.prepare('SELECT count(*) AS count FROM reconciliation_results WHERE run_id = ?').get(first.runId)).toEqual({ count: 6 });
     expect(runs.latestSummary()).toMatchObject({ runId: second.runId, metrics: { total: 6, matched: 2, unresolved: 4 } });
     database.close();
@@ -74,7 +74,7 @@ describe('persisted reconciliation runs', () => {
       .run(runId, '2026-08-15T00:00:00.000Z');
     database.migrate(migrations);
     expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total, unresolved_rate AS unresolvedRate FROM runs').get()).toEqual({ id: runId, asOfDate: '2026-08-15', total: 5, unresolvedRate: .4 });
-    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
+    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
     const runs = new RunsService(database, initialSeed);
     runs.seed();
     expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 5, matched: 3, unresolved: 2, reconciliationRate: .6, unresolvedRate: .4 } });
@@ -121,21 +121,21 @@ describe('persisted reconciliation runs', () => {
     const first = runs.run('2026-08-15');
     const unmatched = first.results.find((result) => result.status === 'unmatched')!;
     const missing = first.results.find((result) => result.status === 'missing-from-broker')!;
-    expect(first.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 1 });
+    expect(first.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 2 });
     const reviewed = runs.reviewUnmatchedResult(first.runId, unmatched.id);
     expect(reviewed.results.find((result) => result.id === unmatched.id)?.reviewed).toBe(true);
-    expect(reviewed.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
-    expect(runs.reviewUnmatchedResult(first.runId, unmatched.id).reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    expect(reviewed.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
+    expect(runs.reviewUnmatchedResult(first.runId, unmatched.id).reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
     expect(() => runs.reviewUnmatchedResult(first.runId, missing.id)).toThrow('Only unmatched results can be reviewed.');
-    expect(runs.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    expect(runs.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
     const rerun = runs.run('2026-08-15');
-    expect(rerun.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 1 });
+    expect(rerun.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 2 });
     database.close();
     const restoredDatabase = new SqliteDatabase({ path: path.join(directory, 'runs.sqlite') });
     const restoredRuns = new RunsService(restoredDatabase, initialSeed);
     restoredRuns.migrate(migrations);
     restoredRuns.seed();
-    expect(restoredRuns.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    expect(restoredRuns.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
     restoredDatabase.close();
   });
 
@@ -189,6 +189,29 @@ describe('persisted reconciliation runs', () => {
     expect(restoredRuns.workspaceForRun(first.runId)?.results.find((result) => result.id === missing.id)?.comment).toBe('Request missing broker trade.');
     expect(restoredRuns.workspaceForRun(first.runId)?.results.find((result) => result.id === missingOtMurex.id)?.comment).toBe('Request missing OT/MUREX trade.');
     restoredDatabase.close();
+  });
+
+  it('authoritatively builds an exact broker-scoped Draft from persisted comments', () => {
+    const { database, runs } = setup();
+    const run = runs.run('2026-08-15');
+    const atlasRows = run.results.filter((result) => result.status === 'unmatched' && result.brokerTrade?.brokerContact?.name === 'Atlas Securities');
+    expect(atlasRows).toHaveLength(2);
+    runs.saveResultComment(run.runId, atlasRows[0]!.id, 'Confirm booking date.');
+    runs.saveResultComment(run.runId, atlasRows[1]!.id, 'Confirm amount.');
+    const draft = runs.previewBrokerEmail(run.runId, atlasRows[0]!.id);
+    expect(draft).toMatchObject({ status: 'Draft', recipient: 'operations@atlas-securities.example', subject: 'Follow-up: unmatched trades for Atlas Securities' });
+    expect(draft.body).toContain('Please review the unmatched trades');
+    expect(draft.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tradeId: 'BRK-202', comment: 'Confirm booking date.' }),
+      expect.objectContaining({ tradeId: 'BRK-203', comment: 'Confirm amount.' })
+    ]));
+    expect(draft.rows).toHaveLength(2);
+    expect(new Set(draft.rows.map((row) => row.tradeId)).size).toBe(2);
+    expect(draft.rows.some((row) => row.tradeId === 'BRK-Z')).toBe(false);
+    const missing = run.results.find((result) => result.status === 'missing-from-ot-murex')!;
+    expect(() => runs.previewBrokerEmail(run.runId, missing.id)).toThrow(BrokerPreviewNotEligibleError);
+    expect(() => runs.previewBrokerEmail(run.runId, 'stale')).toThrow('This result is no longer available.');
+    database.close();
   });
 
   it('backfills existing result comments to null when the comment migration is applied', () => {

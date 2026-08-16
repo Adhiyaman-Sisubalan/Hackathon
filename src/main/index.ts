@@ -20,7 +20,7 @@ const userDataDirectory = process.env.RECONCILIATION_USER_DATA;
 if (userDataDirectory) app.setPath('userData', userDataDirectory);
 
 function migrations(): Migration[] {
-  return ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql'].map((filename, index) => {
+  return ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql'].map((filename, index) => {
     const locations = [path.join(process.resourcesPath, 'migrations', filename), path.join(app.getAppPath(), 'migrations', filename), path.resolve(currentDirectory, '../../migrations', filename)];
     const migration = locations.find(existsSync);
     if (!migration) throw new Error(`Database migration ${filename} is unavailable.`);
@@ -44,7 +44,8 @@ app.whenReady().then(async () => {
       listCompletedRuns: () => { throw new Error('Reconciliation bootstrap failed.'); },
       workspaceForRun: () => { throw new Error('Reconciliation bootstrap failed.'); },
       reviewUnmatchedResult: () => { throw new Error('Reconciliation bootstrap failed.'); },
-      saveResultComment: () => { throw new Error('Reconciliation bootstrap failed.'); }
+      saveResultComment: () => { throw new Error('Reconciliation bootstrap failed.'); },
+      previewBrokerEmail: () => { throw new Error('Reconciliation bootstrap failed.'); }
     };
   }
   registerDashboardHandlers(ipcMain, dashboard, (event) => isTrustedRendererSender(event, rendererUrl));

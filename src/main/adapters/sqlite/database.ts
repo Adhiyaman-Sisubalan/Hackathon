@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import { anomalyContextFor, type AnomalyThresholds } from '../../../domain/metrics/reconciliation-metrics.js';
-import { ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { BrokerEmailDraftSchema, ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
 export interface DatabaseOptions { path: string; }
@@ -19,6 +19,7 @@ export interface SeededRunHistory {
 
 export type ResultReviewOutcome = 'not-found' | 'not-eligible';
 export type ResultCommentOutcome = 'not-found' | 'not-eligible';
+export type BrokerPreviewOutcome = 'not-found' | 'not-eligible' | 'no-broker';
 
 export class SqliteDatabase {
   readonly db: DatabaseSync;
@@ -65,8 +66,8 @@ export class SqliteDatabase {
       const metrics = workspace.metrics;
       this.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
         VALUES (?, 'completed', ?, ?, ?, ?, ?, ?, ?)`).run(workspace.runId, workspace.completedAt, workspace.asOfDate, metrics.total, metrics.matched, metrics.unresolved, metrics.reconciliationRate, metrics.unresolvedRate);
-      const insertTrade = this.db.prepare(`INSERT INTO source_trades (run_id, source, trade_id, isin, buy_sell, currency, settlement_date, amount, quantity, price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const insertTrade = this.db.prepare(`INSERT INTO source_trades (run_id, source, trade_id, isin, buy_sell, currency, settlement_date, amount, quantity, price, broker_name, broker_recipient)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const seen = new Set<string>();
       for (const result of workspace.results) {
         for (const trade of [result.brokerTrade, result.otMurexTrade]) {
@@ -151,6 +152,28 @@ export class SqliteDatabase {
     });
   }
 
+  previewBrokerEmail(runId: string, resultId: string): BrokerEmailDraft | BrokerPreviewOutcome {
+    const selected = this.db.prepare(`SELECT results.status, broker.broker_name AS brokerName, broker.broker_recipient AS brokerRecipient
+      FROM reconciliation_results AS results
+      LEFT JOIN source_trades AS broker ON broker.run_id = results.run_id AND broker.source = 'broker' AND broker.trade_id = results.broker_trade_id
+      WHERE results.id = ? AND results.run_id = ?`).get(`${runId}:${resultId}`, runId) as BrokerPreviewSelectionRow | undefined;
+    if (!selected) return 'not-found';
+    if (selected.status !== 'unmatched') return 'not-eligible';
+    if (!selected.brokerName || !selected.brokerRecipient) return 'no-broker';
+    const rows = this.db.prepare(`SELECT broker.trade_id AS tradeId, broker.isin AS isin, broker.buy_sell AS buySell, broker.amount AS amount,
+      broker.quantity AS quantity, broker.currency AS currency, broker.settlement_date AS settlementDate, results.reason AS mismatchReason, results.comment AS comment
+      FROM reconciliation_results AS results
+      INNER JOIN source_trades AS broker ON broker.run_id = results.run_id AND broker.source = 'broker' AND broker.trade_id = results.broker_trade_id
+      WHERE results.run_id = ? AND results.status = 'unmatched' AND broker.broker_name = ? AND broker.broker_recipient = ?
+      ORDER BY results.rowid ASC`).all(runId, selected.brokerName, selected.brokerRecipient) as unknown as BrokerPreviewRow[];
+    return BrokerEmailDraftSchema.parse({
+      status: 'Draft', brokerName: selected.brokerName, recipient: selected.brokerRecipient,
+      subject: `Follow-up: unmatched trades for ${selected.brokerName}`,
+      body: `Dear ${selected.brokerName} Operations,\n\nPlease review the unmatched trades listed below and confirm the appropriate resolution.\n\nKind regards,\nReconciliation Operations`,
+      rows
+    });
+  }
+
   private workspaceSnapshotForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
     const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
@@ -158,7 +181,7 @@ export class SqliteDatabase {
     if (!run) return null;
     const rows = this.db.prepare(`SELECT result_rowid, status, reason, reviewed, comment,
       broker.trade_id AS brokerTradeId, broker.isin AS brokerIsin, broker.buy_sell AS brokerBuySell, broker.currency AS brokerCurrency,
-      broker.settlement_date AS brokerSettlementDate, broker.amount AS brokerAmount, broker.quantity AS brokerQuantity, broker.price AS brokerPrice,
+      broker.settlement_date AS brokerSettlementDate, broker.amount AS brokerAmount, broker.quantity AS brokerQuantity, broker.price AS brokerPrice, broker.broker_name AS brokerName, broker.broker_recipient AS brokerRecipient,
       ot_murex.trade_id AS otMurexTradeId, ot_murex.isin AS otMurexIsin, ot_murex.buy_sell AS otMurexBuySell, ot_murex.currency AS otMurexCurrency,
       ot_murex.settlement_date AS otMurexSettlementDate, ot_murex.amount AS otMurexAmount, ot_murex.quantity AS otMurexQuantity, ot_murex.price AS otMurexPrice
       FROM (SELECT rowid AS result_rowid, * FROM reconciliation_results WHERE run_id = ?) AS results
@@ -209,8 +232,15 @@ interface HydratedResultRow {
   readonly comment: string | null;
   readonly brokerTradeId: string | null; readonly brokerIsin: string | null; readonly brokerBuySell: 'buy' | 'sell' | null; readonly brokerCurrency: string | null;
   readonly brokerSettlementDate: string | null; readonly brokerAmount: string | null; readonly brokerQuantity: string | null; readonly brokerPrice: string | null;
+  readonly brokerName: string | null; readonly brokerRecipient: string | null;
   readonly otMurexTradeId: string | null; readonly otMurexIsin: string | null; readonly otMurexBuySell: 'buy' | 'sell' | null; readonly otMurexCurrency: string | null;
   readonly otMurexSettlementDate: string | null; readonly otMurexAmount: string | null; readonly otMurexQuantity: string | null; readonly otMurexPrice: string | null;
+}
+
+interface BrokerPreviewSelectionRow { readonly status: string; readonly brokerName: string | null; readonly brokerRecipient: string | null; }
+interface BrokerPreviewRow {
+  readonly tradeId: string; readonly isin: string; readonly buySell: 'buy' | 'sell'; readonly amount: string; readonly quantity: string; readonly currency: string;
+  readonly settlementDate: string; readonly mismatchReason: 'amount-mismatch' | 'quantity-mismatch' | 'amount-and-quantity-mismatch'; readonly comment: string | null;
 }
 
 interface RunSummaryRow {
@@ -230,10 +260,11 @@ function hydrateTrade(row: HydratedResultRow, prefix: 'broker' | 'otMurex'): Tra
   return {
     source: prefix === 'broker' ? 'broker' : 'ot-murex', tradeId,
     isin: row[`${prefix}Isin`]!, buySell: row[`${prefix}BuySell`]!, currency: row[`${prefix}Currency`]!,
-    settlementDate: row[`${prefix}SettlementDate`]!, amount: row[`${prefix}Amount`]!, quantity: row[`${prefix}Quantity`]!, price: row[`${prefix}Price`]!
+    settlementDate: row[`${prefix}SettlementDate`]!, amount: row[`${prefix}Amount`]!, quantity: row[`${prefix}Quantity`]!, price: row[`${prefix}Price`]!,
+    ...(prefix === 'broker' && row.brokerName && row.brokerRecipient ? { brokerContact: { name: row.brokerName, recipient: row.brokerRecipient } } : {})
   };
 }
 
-function tradeRow(runId: string, trade: Trade): [string, string, string, string, string, string, string, string, string, string] {
-  return [runId, trade.source, trade.tradeId, trade.isin, trade.buySell, trade.currency, trade.settlementDate, trade.amount, trade.quantity, trade.price];
+function tradeRow(runId: string, trade: Trade): [string, string, string, string, string, string, string, string, string, string, string | null, string | null] {
+  return [runId, trade.source, trade.tradeId, trade.isin, trade.buySell, trade.currency, trade.settlementDate, trade.amount, trade.quantity, trade.price, trade.brokerContact?.name ?? null, trade.brokerContact?.recipient ?? null];
 }

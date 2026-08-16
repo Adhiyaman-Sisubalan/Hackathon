@@ -2,7 +2,7 @@ import { createColumnHelper, columnFilteringFeature, columnVisibilityFeature, co
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { compareNormalizedDecimals, normalizeDecimal } from '../../../domain/decimal.js';
 import { reconciliationStatuses, type ReconciliationStatus } from '../../../domain/reconciliation/reconciliation.js';
-import type { ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import type { BrokerEmailDraft, ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import { ReconciliationStatusText } from '../../components/StatusText.js';
 import { SummaryStrip } from '../../components/SummaryStrip.js';
 import styles from './Results.module.css';
@@ -10,6 +10,7 @@ import styles from './Results.module.css';
 type ReconciliationResult = ReconciliationWorkspace['results'][number];
 type ReviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 type CommentError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
+type PreviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 
 type ResultRow = {
   readonly result: ReconciliationResult;
@@ -128,12 +129,18 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const [commentErrors, setCommentErrors] = useState<ReadonlyMap<string, CommentError>>(new Map());
   const [savingCommentResultIds, setSavingCommentResultIds] = useState<ReadonlySet<string>>(new Set());
   const [savedCommentResultIds, setSavedCommentResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [previewDrafts, setPreviewDrafts] = useState<ReadonlyMap<string, BrokerEmailDraft>>(new Map());
+  const [previewErrors, setPreviewErrors] = useState<ReadonlyMap<string, PreviewError>>(new Map());
+  const [previewingResultIds, setPreviewingResultIds] = useState<ReadonlySet<string>>(new Set());
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
   const inspectorInvokerRef = useRef<HTMLButtonElement>(null);
+  const previewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previewButtonRef = useRef<HTMLButtonElement>(null);
   const inFlightReviewIds = useRef(new Set<string>());
   const inFlightCommentIds = useRef(new Set<string>());
+  const inFlightPreviewIds = useRef(new Set<string>());
   const workspaceMutationQueue = useRef(Promise.resolve());
   const compactInspectorOpenRef = useRef(false);
   useEffect(() => { headingRef.current?.focus(); }, []);
@@ -153,6 +160,8 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const selectedReviewing = Boolean(selectedResultId && reviewingResultIds.has(selectedResultId));
   const selectedReviewError = selectedResultId ? reviewErrors.get(selectedResultId) : undefined;
   const selectedCommentError = selectedResultId ? commentErrors.get(selectedResultId) : undefined;
+  const selectedPreviewError = selectedResultId ? previewErrors.get(selectedResultId) : undefined;
+  const selectedPreviewDraft = selectedResultId ? previewDrafts.get(selectedResultId) : undefined;
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
@@ -255,10 +264,39 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       });
     }
   };
+  const previewBrokerEmail = async (result: ReconciliationResult) => {
+    const resultId = result.id;
+    if (result.status !== 'unmatched' || !result.brokerTrade?.brokerContact || inFlightPreviewIds.current.has(resultId)) return;
+    inFlightPreviewIds.current.add(resultId);
+    setPreviewingResultIds((current) => new Set(current).add(resultId));
+    setPreviewErrors((current) => { const next = new Map(current); next.delete(resultId); return next; });
+    try {
+      if (!window.reconciliation) {
+        setPreviewErrors((current) => new Map(current).set(resultId, { resultId, message: 'Broker email previews are unavailable.', retryable: false }));
+        return;
+      }
+      const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.previewBrokerEmail(workspace.runId, resultId));
+      if (response.ok) {
+        setPreviewDrafts((current) => new Map(current).set(resultId, response.data.draft));
+        requestAnimationFrame(() => previewHeadingRef.current?.focus());
+        return;
+      }
+      setPreviewErrors((current) => new Map(current).set(resultId, { resultId, message: response.error.message, retryable: response.error.retryable }));
+    } catch {
+      setPreviewErrors((current) => new Map(current).set(resultId, { resultId, message: 'The broker email draft could not be prepared. Please retry.', retryable: true }));
+    } finally {
+      inFlightPreviewIds.current.delete(resultId);
+      setPreviewingResultIds((current) => { const next = new Set(current); next.delete(resultId); return next; });
+    }
+  };
+  const closePreview = (resultId: string) => {
+    setPreviewDrafts((current) => { const next = new Map(current); next.delete(resultId); return next; });
+    requestAnimationFrame(() => previewButtonRef.current?.focus());
+  };
   const closeInspector = () => {
     compactInspectorOpenRef.current = false;
     setCompactInspectorOpen(false);
-    requestAnimationFrame(() => inspectorInvokerRef.current?.focus());
+    inspectorInvokerRef.current?.focus();
   };
   useEffect(() => {
     compactInspectorOpenRef.current = compactInspectorOpen;
@@ -311,16 +349,16 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       {selectedResult && <p id="selected-result-status" className={styles.visuallyHidden}>Selected Result: {selectedResult.brokerTrade?.tradeId ?? selectedResult.otMurexTrade?.tradeId ?? 'reconciliation record'}.</p>}
       <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
       {selectedReviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {selectedReviewError.message}</p>{selectedReviewError.retryable && <button type="button" onClick={() => selectedResult && void review(selectedResult)}>Retry review</button>}</div>}
-      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} className={styles.detailPanel} />
+      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} previewDraft={selectedPreviewDraft} previewError={selectedPreviewError} previewing={Boolean(selectedResultId && previewingResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} onPreview={previewBrokerEmail} onClosePreview={closePreview} previewHeadingRef={previewHeadingRef} previewButtonRef={previewButtonRef} className={styles.detailPanel} />
       {compactInspectorOpen && <aside className={styles.compactInspector} aria-labelledby="inspector-title">
         <button type="button" className={styles.closeInspector} onClick={closeInspector}>Close inspector</button>
-        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} headingRef={inspectorHeadingRef} compact />
+        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} previewDraft={selectedPreviewDraft} previewError={selectedPreviewError} previewing={Boolean(selectedResultId && previewingResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} onPreview={previewBrokerEmail} onClosePreview={closePreview} previewHeadingRef={previewHeadingRef} previewButtonRef={previewButtonRef} headingRef={inspectorHeadingRef} compact />
       </aside>}
     </div>
   </section>;
 }
 
-function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, savingComment, commentSaved, onCommentDraftChange, onSaveComment, className, compact, headingRef }: {
+function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, savingComment, commentSaved, previewDraft, previewError, previewing, onCommentDraftChange, onSaveComment, onPreview, onClosePreview, previewHeadingRef, previewButtonRef, className, compact, headingRef }: {
   result: ReconciliationResult | undefined;
   reviewed: boolean;
   reviewing: boolean;
@@ -328,8 +366,15 @@ function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, 
   commentError: CommentError | undefined;
   savingComment: boolean;
   commentSaved: boolean;
+  previewDraft: BrokerEmailDraft | undefined;
+  previewError: PreviewError | undefined;
+  previewing: boolean;
   onCommentDraftChange(resultId: string, comment: string): void;
   onSaveComment(result: ReconciliationResult): void;
+  onPreview(result: ReconciliationResult): void;
+  onClosePreview(resultId: string): void;
+  previewHeadingRef: RefObject<HTMLHeadingElement | null>;
+  previewButtonRef: RefObject<HTMLButtonElement | null>;
   className?: string;
   compact?: boolean;
   headingRef?: RefObject<HTMLHeadingElement | null>;
@@ -349,6 +394,7 @@ function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, 
       <Evidence title="Broker evidence" trade={result.brokerTrade} missing="Broker evidence is not available for this Result." />
       <Evidence title="OT/MUREX evidence" trade={result.otMurexTrade} missing="OT/MUREX evidence is not available for this Result." />
       <CommentEditor result={result} draft={commentDraft} error={commentError} saving={savingComment} saved={commentSaved} onDraftChange={onCommentDraftChange} onSave={onSaveComment} />
+      <BrokerPreview result={result} draft={previewDraft} error={previewError} previewing={previewing} onPreview={onPreview} onClose={onClosePreview} headingRef={previewHeadingRef} buttonRef={previewButtonRef} />
     </>}
   </aside>;
 }
@@ -372,6 +418,40 @@ function CommentEditor({ result, draft, error, saving, saved, onDraftChange, onS
     <button type="button" onClick={() => onSave(result)} disabled={saving}>{saving ? 'Saving comment…' : 'Save comment'}</button>
     {saved && <p className={styles.success} role="status">Comment saved.</p>}
     {error && <div id={errorId} className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" onClick={() => onSave(result)}>Retry comment save</button>}</div>}
+  </section>;
+}
+
+function BrokerPreview({ result, draft, error, previewing, onPreview, onClose, headingRef, buttonRef }: {
+  result: ReconciliationResult;
+  draft: BrokerEmailDraft | undefined;
+  error: PreviewError | undefined;
+  previewing: boolean;
+  onPreview(result: ReconciliationResult): void;
+  onClose(resultId: string): void;
+  headingRef: RefObject<HTMLHeadingElement | null>;
+  buttonRef: RefObject<HTMLButtonElement | null>;
+}) {
+  if (draft) return <section className={styles.preview} aria-label="Broker email draft">
+    <p className={styles.draftStatus} aria-label="Draft status">Draft</p>
+    <h3 ref={headingRef} tabIndex={-1}>Broker email draft</h3>
+    <dl className={styles.detailSummary}>
+      <div><dt>To</dt><dd>{draft.recipient}</dd></div>
+      <div><dt>Subject</dt><dd>{draft.subject}</dd></div>
+    </dl>
+    <p className={styles.emailBody}>{draft.body}</p>
+    <table className={styles.draftTable}>
+      <caption>Unmatched trades for {draft.brokerName}</caption>
+      <thead><tr><th scope="col">Trade ID</th><th scope="col">ISIN</th><th scope="col">Buy / sell</th><th scope="col">Amount</th><th scope="col">Quantity</th><th scope="col">Currency</th><th scope="col">Settlement date</th><th scope="col">Mismatch reason</th><th scope="col">Comment</th></tr></thead>
+      <tbody>{draft.rows.map((row) => <tr key={row.tradeId}><td>{row.tradeId}</td><td>{row.isin}</td><td>{row.buySell}</td><td>{formatDecimal(row.amount)}</td><td>{formatDecimal(row.quantity)}</td><td>{row.currency}</td><td>{formatDate(row.settlementDate)}</td><td>{row.mismatchReason.replaceAll('-', ' ')}</td><td>{row.comment ?? '—'}</td></tr>)}</tbody>
+    </table>
+    <p className={styles.previewNotice}>This is a preview only. No email will be sent.</p>
+    <button type="button" onClick={() => onClose(result.id)}>Back to detail</button>
+  </section>;
+  const explanation = result.status !== 'unmatched' ? 'Email drafts are available only for unmatched Results.' : !result.brokerTrade?.brokerContact ? 'Broker details are unavailable for this Result.' : null;
+  return <section className={styles.preview} aria-label="Broker email preview">
+    <h3>Broker email</h3>
+    {explanation ? <p>{explanation}</p> : <button ref={buttonRef} type="button" onClick={() => onPreview(result)} disabled={previewing}>{previewing ? 'Preparing draft…' : 'Preview broker email'}</button>}
+    {error && <div className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" onClick={() => onPreview(result)}>Retry</button>}<button type="button" onClick={() => onClose(result.id)}>Back to detail</button></div>}
   </section>;
 }
 

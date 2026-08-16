@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
-import { ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
+import { BrokerPreviewRequestSchema, BrokerPreviewResultSchema, ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError } from '../../domain/reconciliation/reconciliation.js';
-import { ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
+import { BrokerPreviewNotEligibleError, BrokerUnavailableError, ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
 import type { SenderValidator } from './dashboard.js';
 
 export interface ReconciliationCommand {
@@ -10,6 +10,7 @@ export interface ReconciliationCommand {
   workspaceForRun?(runId: string): ReconciliationWorkspace | null;
   reviewUnmatchedResult?(runId: string, resultId: string): ReconciliationWorkspace;
   saveResultComment?(runId: string, resultId: string, comment: string): ReconciliationWorkspace;
+  previewBrokerEmail?(runId: string, resultId: string): BrokerEmailDraft;
 }
 
 export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>, command: ReconciliationCommand, validSender: SenderValidator): void {
@@ -64,6 +65,21 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       if (error instanceof ResultNotFoundError) return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
       if (error instanceof ResultCommentNotEligibleError) return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Comments are only available for unresolved results.', retryable: false, field: 'resultId' } });
       return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The comment could not be saved. Please retry.', retryable: true } });
+    }
+  });
+  ipcMain.handle(ReconciliationChannels.previewBroker, (event: IpcMainInvokeEvent, payload: unknown) => {
+    const request = BrokerPreviewRequestSchema.safeParse(payload);
+    if (!validSender(event) || !request.success) {
+      return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'This request is not permitted.', retryable: false } });
+    }
+    try {
+      if (!command.previewBrokerEmail) throw new Error('Broker previews are unavailable.');
+      return BrokerPreviewResultSchema.parse({ ok: true, data: { draft: command.previewBrokerEmail(request.data.runId, request.data.resultId) } });
+    } catch (error) {
+      if (error instanceof ResultNotFoundError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
+      if (error instanceof BrokerPreviewNotEligibleError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed unmatched results can be previewed.', retryable: false, field: 'resultId' } });
+      if (error instanceof BrokerUnavailableError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Broker details are unavailable for this result.', retryable: false, field: 'resultId' } });
+      return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'QUERY_FAILED', message: 'The broker email draft could not be prepared. Please retry.', retryable: true } });
     }
   });
   ipcMain.handle(ReconciliationChannels.run, (event: IpcMainInvokeEvent, payload: unknown) => {

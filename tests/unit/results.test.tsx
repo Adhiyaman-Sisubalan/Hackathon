@@ -6,7 +6,7 @@ import type { ReconciliationWorkspace } from '../../src/shared/contracts/reconci
 
 afterEach(() => { cleanup(); window.reconciliation = undefined; });
 
-const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000000001', buySell: 'buy' as const, currency: 'USD', settlementDate: '2026-08-15', amount: '1234.500', quantity: '20.00', price: '61.7250' };
+const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000000001', buySell: 'buy' as const, currency: 'USD', settlementDate: '2026-08-15', amount: '1234.500', quantity: '20.00', price: '61.7250', brokerContact: { name: 'Atlas Securities', recipient: 'operations@atlas-securities.example' } };
 const otTrade = { source: 'ot-murex' as const, tradeId: 'OT-9', isin: 'GB0000000002', buySell: 'sell' as const, currency: 'GBP', settlementDate: '2026-08-16', amount: '9.25', quantity: '2', price: '4.625' };
 
 function workspace(results: ReconciliationWorkspace['results'] = [
@@ -258,5 +258,47 @@ describe('Results workspace table', () => {
     listener();
     await waitFor(() => expect(document.activeElement).toBe(open));
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
+  });
+
+  it('opens a non-modal authoritative Draft after comments, scopes its rows, and restores invoker focus', async () => {
+    const initial = workspace();
+    const previewBrokerEmail = vi.fn(async () => ({ ok: true as const, data: { draft: { status: 'Draft' as const, brokerName: 'Atlas Securities', recipient: 'operations@atlas-securities.example', subject: 'Follow-up: unmatched trades for Atlas Securities', body: 'Please review the unmatched trades.', rows: [{ tradeId: 'BRK-8', isin: 'US0000000001', buySell: 'buy' as const, amount: '10.1', quantity: '20', currency: 'USD', settlementDate: '2026-08-15', mismatchReason: 'amount-mismatch' as const, comment: 'Persisted comment' }] } } }));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: initial } })), previewBrokerEmail } } as never;
+    render(<Results workspace={initial} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    const preview = screen.getByRole('button', { name: 'Preview broker email' });
+    fireEvent.click(preview);
+    await waitFor(() => expect(previewBrokerEmail).toHaveBeenCalledWith(initial.runId, 'unmatched'));
+    expect(await screen.findByRole('heading', { name: 'Broker email draft' })).toBeTruthy();
+    expect(document.activeElement?.textContent).toContain('Broker email draft');
+    expect(screen.getByLabelText('Draft status')).toBeTruthy();
+    expect(screen.getByText('operations@atlas-securities.example')).toBeTruthy();
+    expect(screen.getByText('Persisted comment')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to detail' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Preview broker email' })));
+  });
+
+  it('keeps detail and comment context on retryable preview failure and explains ineligible Results', async () => {
+    const previewBrokerEmail = vi.fn(async () => ({ ok: false as const, error: { code: 'QUERY_FAILED' as const, message: 'Try again.', retryable: true } }));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: workspace() } })), previewBrokerEmail } } as never;
+    render(<Results workspace={workspace()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'Keep this investigation.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview broker email' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Try again.');
+    expect((screen.getByRole('textbox', { name: 'Comment' }) as HTMLTextAreaElement).value).toBe('Keep this investigation.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(previewBrokerEmail).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Select BRK-7' })[0]!);
+    expect(screen.getByText('Email drafts are available only for unmatched Results.')).toBeTruthy();
+  });
+
+  it('does not submit a preview for an unmatched Result with no broker details', () => {
+    const noBroker = workspace().results.map((result) => result.id === 'unmatched' ? { ...result, brokerTrade: { ...result.brokerTrade!, brokerContact: undefined } } : result);
+    render(<Results workspace={workspace(noBroker)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    expect(screen.getByText('Broker details are unavailable for this Result.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Preview broker email' })).toBeNull();
   });
 });

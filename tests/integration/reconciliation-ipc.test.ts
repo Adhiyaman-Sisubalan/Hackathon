@@ -3,7 +3,7 @@ import { registerReconciliationHandlers } from '../../src/main/ipc/reconciliatio
 import { isTrustedRendererSender } from '../../src/main/ipc/dashboard.js';
 import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconciliation.js';
 import { ReconciliationChannels } from '../../src/shared/contracts/reconciliation.js';
-import { ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError } from '../../src/main/modules/runs/runs-service.js';
+import { BrokerPreviewNotEligibleError, ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError } from '../../src/main/modules/runs/runs-service.js';
 
 describe('reconciliation IPC boundary', () => {
   it('validates sender and payload, returns safe typed failures, and emits parsed progress', async () => {
@@ -104,5 +104,18 @@ describe('reconciliation IPC boundary', () => {
     expect(await handlers.get(ReconciliationChannels.saveComment)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'missing', comment: 'Nope' })).toEqual({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
     registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, { run: () => { throw new Error('unused'); }, saveResultComment: () => { throw new ResultCommentNotEligibleError(); } }, () => true);
     expect(await handlers.get(ReconciliationChannels.saveComment)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched', comment: 'Nope' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Comments are only available for unresolved results.', retryable: false, field: 'resultId' } });
+  });
+
+  it('exposes only the identity-scoped broker preview command and maps ineligible results safely', async () => {
+    const handlers = new Map<string, (event: any, payload: unknown) => any>();
+    const runId = '11111111-1111-4111-8111-111111111111';
+    const previewBrokerEmail = vi.fn(() => ({ status: 'Draft' as const, brokerName: 'Atlas Securities', recipient: 'operations@atlas-securities.example', subject: 'Follow-up', body: 'Please review.', rows: [{ tradeId: 'BRK-202', isin: 'US0000000005', buySell: 'sell' as const, amount: '200', quantity: '20', currency: 'EUR', settlementDate: '2026-08-19', mismatchReason: 'amount-mismatch' as const, comment: 'Persisted comment' }] }));
+    registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, { run: () => { throw new Error('unused'); }, previewBrokerEmail }, () => true);
+    const handler = handlers.get(ReconciliationChannels.previewBroker)!;
+    expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'logical-result' })).toMatchObject({ ok: true, data: { draft: { status: 'Draft', rows: [{ comment: 'Persisted comment' }] } } });
+    expect(previewBrokerEmail).toHaveBeenCalledWith(runId, 'logical-result');
+    expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'logical-result', recipient: 'tampered@example.com' })).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
+    registerReconciliationHandlers({ handle: vi.fn((channel, next) => { handlers.set(channel, next); }) }, { run: () => { throw new Error('unused'); }, previewBrokerEmail: () => { throw new BrokerPreviewNotEligibleError(); } }, () => true);
+    expect(await handlers.get(ReconciliationChannels.previewBroker)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed unmatched results can be previewed.', retryable: false, field: 'resultId' } });
   });
 });

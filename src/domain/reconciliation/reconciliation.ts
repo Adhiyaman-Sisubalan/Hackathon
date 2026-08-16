@@ -4,6 +4,11 @@ export const reconciliationStatuses = ['matched', 'unmatched', 'missing-from-bro
 export type ReconciliationStatus = typeof reconciliationStatuses[number];
 export type TradeSource = 'broker' | 'ot-murex';
 
+export interface BrokerContact {
+  readonly name: string;
+  readonly recipient: string;
+}
+
 export interface Trade {
   readonly source: TradeSource;
   readonly tradeId: string;
@@ -14,6 +19,8 @@ export interface Trade {
   readonly amount: string;
   readonly quantity: string;
   readonly price: string;
+  /** Present only for fixture-backed broker evidence. */
+  readonly brokerContact?: BrokerContact | null;
 }
 
 export interface ReconciliationResult {
