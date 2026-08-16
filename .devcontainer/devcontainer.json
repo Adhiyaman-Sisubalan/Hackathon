@@ -1,0 +1,29 @@
+{
+  "name": "Reconciliation desktop",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-24-bookworm",
+  "features": {
+    // Serves a desktop over noVNC on port 6080 so the Electron window is viewable in a browser tab.
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "version": "latest",
+      "password": "vscode",
+      "webPort": "6080",
+      "vncPort": "5901"
+    }
+  },
+  "forwardPorts": [5173, 6080],
+  "portsAttributes": {
+    "5173": { "label": "Web preview (npm run dev:web)", "onAutoForward": "openPreview" },
+    "6080": { "label": "Desktop (noVNC) for npm start", "onAutoForward": "silent" }
+  },
+  "onCreateCommand": "bash .devcontainer/install-electron-deps.sh",
+  "postCreateCommand": "npm ci",
+  "remoteEnv": {
+    // Electron draws into the virtual display provided by desktop-lite.
+    "DISPLAY": ":1"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "ms-playwright.playwright"]
+    }
+  }
+}
