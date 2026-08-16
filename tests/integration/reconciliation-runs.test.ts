@@ -6,10 +6,10 @@ import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios
 import { initialSeed } from '../../fixtures/initial-seed.js';
 import { SqliteDatabase } from '../../src/main/adapters/sqlite/database.js';
 import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconciliation.js';
-import { RunsService, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
+import { ResultCommentNotEligibleError, RunsService, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
 
 const directories: string[] = [];
-const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql'];
+const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
@@ -74,7 +74,7 @@ describe('persisted reconciliation runs', () => {
       .run(runId, '2026-08-15T00:00:00.000Z');
     database.migrate(migrations);
     expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total, unresolved_rate AS unresolvedRate FROM runs').get()).toEqual({ id: runId, asOfDate: '2026-08-15', total: 5, unresolvedRate: .4 });
-    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 });
+    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
     const runs = new RunsService(database, initialSeed);
     runs.seed();
     expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 5, matched: 3, unresolved: 2, reconciliationRate: .6, unresolvedRate: .4 } });
@@ -155,6 +155,55 @@ describe('persisted reconciliation runs', () => {
     const runs = new RunsService(database, initialSeed);
     runs.seed();
     expect(runs.workspaceForRun(runId)).toMatchObject({ reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 1 }, results: [{ id: resultId, reviewed: false }] });
+    database.close();
+  });
+
+  it('persists idempotent unresolved comments per run and restores them without copying to reruns', () => {
+    const { database, runs, directory } = setup();
+    const first = runs.run('2026-08-15');
+    const unmatched = first.results.find((result) => result.status === 'unmatched')!;
+    const missing = first.results.find((result) => result.status === 'missing-from-broker')!;
+    const missingOtMurex = first.results.find((result) => result.status === 'missing-from-ot-murex')!;
+    const matched = first.results.find((result) => result.status === 'matched')!;
+
+    const saved = runs.saveResultComment(first.runId, unmatched.id, 'Confirm broker allocation.');
+    expect(saved.results.find((result) => result.id === unmatched.id)?.comment).toBe('Confirm broker allocation.');
+    expect(runs.saveResultComment(first.runId, unmatched.id, 'Confirm broker allocation.').results.find((result) => result.id === unmatched.id)?.comment).toBe('Confirm broker allocation.');
+    expect(runs.saveResultComment(first.runId, unmatched.id, '').results.find((result) => result.id === unmatched.id)?.comment).toBeNull();
+    expect(runs.saveResultComment(first.runId, unmatched.id, 'Confirm broker allocation.').results.find((result) => result.id === unmatched.id)?.comment).toBe('Confirm broker allocation.');
+    expect(runs.saveResultComment(first.runId, missing.id, 'Request missing broker trade.').results.find((result) => result.id === missing.id)?.comment).toBe('Request missing broker trade.');
+    expect(runs.saveResultComment(first.runId, missingOtMurex.id, 'Request missing OT/MUREX trade.').results.find((result) => result.id === missingOtMurex.id)?.comment).toBe('Request missing OT/MUREX trade.');
+    expect(() => runs.saveResultComment(first.runId, matched.id, 'Not permitted.')).toThrow(ResultCommentNotEligibleError);
+    expect(database.db.prepare('SELECT count(*) AS count FROM reconciliation_results WHERE run_id = ?').get(first.runId)).toEqual({ count: 6 });
+
+    const rerun = runs.run('2026-08-15');
+    expect(rerun.results.find((result) => result.id === unmatched.id)?.comment).toBeNull();
+    expect(rerun.results.find((result) => result.id === missingOtMurex.id)?.comment).toBeNull();
+    database.close();
+
+    const restoredDatabase = new SqliteDatabase({ path: path.join(directory, 'runs.sqlite') });
+    const restoredRuns = new RunsService(restoredDatabase, initialSeed);
+    restoredRuns.migrate(migrations);
+    restoredRuns.seed();
+    expect(restoredRuns.workspaceForRun(first.runId)?.results.find((result) => result.id === unmatched.id)?.comment).toBe('Confirm broker allocation.');
+    expect(restoredRuns.workspaceForRun(first.runId)?.results.find((result) => result.id === missing.id)?.comment).toBe('Request missing broker trade.');
+    expect(restoredRuns.workspaceForRun(first.runId)?.results.find((result) => result.id === missingOtMurex.id)?.comment).toBe('Request missing OT/MUREX trade.');
+    restoredDatabase.close();
+  });
+
+  it('backfills existing result comments to null when the comment migration is applied', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'reconciliation-comment-upgrade-'));
+    directories.push(directory);
+    const database = new SqliteDatabase({ path: path.join(directory, 'upgrade.sqlite') });
+    database.migrate(migrations.slice(0, 4));
+    const runId = '99999999-9999-4999-8999-999999999999';
+    const resultId = JSON.stringify([null, null]);
+    database.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
+      VALUES (?, 'completed', '2026-08-15T00:00:00.000Z', '2026-08-15', 1, 0, 1, 0, 1)`).run(runId);
+    database.db.prepare(`INSERT INTO reconciliation_results (id, run_id, status, reason, broker_trade_id, ot_murex_trade_id, reviewed)
+      VALUES (?, ?, 'unmatched', 'amount-mismatch', NULL, NULL, 0)`).run(`${runId}:${resultId}`, runId);
+    database.migrate(migrations);
+    expect(database.db.prepare('SELECT comment FROM reconciliation_results WHERE run_id = ?').get(runId)).toEqual({ comment: null });
     database.close();
   });
 

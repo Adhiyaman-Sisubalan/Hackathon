@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
-import { ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
+import { ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError } from '../../domain/reconciliation/reconciliation.js';
-import { ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
+import { ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
 import type { SenderValidator } from './dashboard.js';
 
 export interface ReconciliationCommand {
@@ -9,6 +9,7 @@ export interface ReconciliationCommand {
   listCompletedRuns?(): readonly ReconciliationRunSummary[];
   workspaceForRun?(runId: string): ReconciliationWorkspace | null;
   reviewUnmatchedResult?(runId: string, resultId: string): ReconciliationWorkspace;
+  saveResultComment?(runId: string, resultId: string, comment: string): ReconciliationWorkspace;
 }
 
 export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>, command: ReconciliationCommand, validSender: SenderValidator): void {
@@ -49,6 +50,20 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       if (error instanceof ResultNotFoundError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
       if (error instanceof ResultNotEligibleError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only unmatched results can be reviewed.', retryable: false, field: 'resultId' } });
       return ResultReviewResultSchema.parse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The result review could not be saved. Please retry.', retryable: true } });
+    }
+  });
+  ipcMain.handle(ReconciliationChannels.saveComment, (event: IpcMainInvokeEvent, payload: unknown) => {
+    const request = ResultCommentSaveRequestSchema.safeParse(payload);
+    if (!validSender(event) || !request.success) {
+      return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'This request is not permitted.', retryable: false } });
+    }
+    try {
+      if (!command.saveResultComment) throw new Error('Result comments are unavailable.');
+      return ResultCommentSaveResultSchema.parse({ ok: true, data: { workspace: command.saveResultComment(request.data.runId, request.data.resultId, request.data.comment) } });
+    } catch (error) {
+      if (error instanceof ResultNotFoundError) return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
+      if (error instanceof ResultCommentNotEligibleError) return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Comments are only available for unresolved results.', retryable: false, field: 'resultId' } });
+      return ResultCommentSaveResultSchema.parse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The comment could not be saved. Please retry.', retryable: true } });
     }
   });
   ipcMain.handle(ReconciliationChannels.run, (event: IpcMainInvokeEvent, payload: unknown) => {

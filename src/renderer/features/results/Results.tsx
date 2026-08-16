@@ -1,5 +1,5 @@
 import { createColumnHelper, columnFilteringFeature, columnVisibilityFeature, constructFilterFn, createFilteredRowModel, createSortedRowModel, rowSortingFeature, tableFeatures, useTable } from '@tanstack/react-table';
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { compareNormalizedDecimals, normalizeDecimal } from '../../../domain/decimal.js';
 import { reconciliationStatuses, type ReconciliationStatus } from '../../../domain/reconciliation/reconciliation.js';
 import type { ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
@@ -9,6 +9,7 @@ import styles from './Results.module.css';
 
 type ReconciliationResult = ReconciliationWorkspace['results'][number];
 type ReviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
+type CommentError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 
 type ResultRow = {
   readonly result: ReconciliationResult;
@@ -123,11 +124,17 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const [reviewErrors, setReviewErrors] = useState<ReadonlyMap<string, ReviewError>>(new Map());
   const [reviewingResultIds, setReviewingResultIds] = useState<ReadonlySet<string>>(new Set());
   const [locallyReviewedResultIds, setLocallyReviewedResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [commentDrafts, setCommentDrafts] = useState<ReadonlyMap<string, string>>(new Map());
+  const [commentErrors, setCommentErrors] = useState<ReadonlyMap<string, CommentError>>(new Map());
+  const [savingCommentResultIds, setSavingCommentResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [savedCommentResultIds, setSavedCommentResultIds] = useState<ReadonlySet<string>>(new Set());
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
   const inspectorInvokerRef = useRef<HTMLButtonElement>(null);
   const inFlightReviewIds = useRef(new Set<string>());
+  const inFlightCommentIds = useRef(new Set<string>());
+  const workspaceMutationQueue = useRef(Promise.resolve());
   const compactInspectorOpenRef = useRef(false);
   useEffect(() => { headingRef.current?.focus(); }, []);
   const data = useMemo(() => workspace.results.map(rowFor), [workspace.results]);
@@ -145,6 +152,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const selectedReviewed = Boolean(selectedResult?.reviewed || (selectedResultId && locallyReviewedResultIds.has(selectedResultId)));
   const selectedReviewing = Boolean(selectedResultId && reviewingResultIds.has(selectedResultId));
   const selectedReviewError = selectedResultId ? reviewErrors.get(selectedResultId) : undefined;
+  const selectedCommentError = selectedResultId ? commentErrors.get(selectedResultId) : undefined;
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
@@ -165,7 +173,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
         setReviewErrors((current) => new Map(current).set(resultId, { resultId, message: 'Result review is unavailable.', retryable: false }));
         return;
       }
-      const response = await window.reconciliation.runs.reviewResult(workspace.runId, resultId);
+      const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.reviewResult(workspace.runId, resultId));
       if (response.ok) {
         setLocallyReviewedResultIds((current) => new Set(current).add(resultId));
         setReviewErrors((current) => {
@@ -191,6 +199,61 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const selectResult = (result: ReconciliationResult) => {
     setSelectedResultId(result.id);
     void review(result);
+  };
+  const commentDraftFor = (result: ReconciliationResult) => commentDrafts.get(result.id) ?? result.comment ?? '';
+  const setCommentDraft = (resultId: string, comment: string) => {
+    setCommentDrafts((current) => new Map(current).set(resultId, comment));
+    setCommentErrors((current) => {
+      const next = new Map(current);
+      next.delete(resultId);
+      return next;
+    });
+    setSavedCommentResultIds((current) => {
+      const next = new Set(current);
+      next.delete(resultId);
+      return next;
+    });
+  };
+  const saveComment = async (result: ReconciliationResult) => {
+    const resultId = result.id;
+    if (result.status === 'matched' || inFlightCommentIds.current.has(resultId)) return;
+    const comment = commentDraftFor(result);
+    inFlightCommentIds.current.add(resultId);
+    setSavingCommentResultIds((current) => new Set(current).add(resultId));
+    setCommentErrors((current) => {
+      const next = new Map(current);
+      next.delete(resultId);
+      return next;
+    });
+    setSavedCommentResultIds((current) => {
+      const next = new Set(current);
+      next.delete(resultId);
+      return next;
+    });
+    try {
+      if (!window.reconciliation) {
+        setCommentErrors((current) => new Map(current).set(resultId, { resultId, message: 'Comment saving is unavailable.', retryable: false }));
+        return;
+      }
+      const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.saveComment(workspace.runId, resultId, comment));
+      if (response.ok) {
+        const savedComment = response.data.workspace.results.find((candidate) => candidate.id === resultId)?.comment;
+        setCommentDraft(resultId, savedComment ?? '');
+        setSavedCommentResultIds((current) => new Set(current).add(resultId));
+        onWorkspaceChanged?.(response.data.workspace);
+        return;
+      }
+      setCommentErrors((current) => new Map(current).set(resultId, { resultId, message: response.error.message, retryable: response.error.retryable }));
+    } catch {
+      setCommentErrors((current) => new Map(current).set(resultId, { resultId, message: 'The comment could not be saved. Please retry.', retryable: true }));
+    } finally {
+      inFlightCommentIds.current.delete(resultId);
+      setSavingCommentResultIds((current) => {
+        const next = new Set(current);
+        next.delete(resultId);
+        return next;
+      });
+    }
   };
   const closeInspector = () => {
     compactInspectorOpenRef.current = false;
@@ -248,19 +311,25 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       {selectedResult && <p id="selected-result-status" className={styles.visuallyHidden}>Selected Result: {selectedResult.brokerTrade?.tradeId ?? selectedResult.otMurexTrade?.tradeId ?? 'reconciliation record'}.</p>}
       <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
       {selectedReviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {selectedReviewError.message}</p>{selectedReviewError.retryable && <button type="button" onClick={() => selectedResult && void review(selectedResult)}>Retry review</button>}</div>}
-      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} className={styles.detailPanel} />
+      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} className={styles.detailPanel} />
       {compactInspectorOpen && <aside className={styles.compactInspector} aria-labelledby="inspector-title">
         <button type="button" className={styles.closeInspector} onClick={closeInspector}>Close inspector</button>
-        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} headingRef={inspectorHeadingRef} compact />
+        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} commentDraft={selectedResult ? commentDraftFor(selectedResult) : ''} commentError={selectedCommentError} savingComment={Boolean(selectedResultId && savingCommentResultIds.has(selectedResultId))} commentSaved={Boolean(selectedResultId && savedCommentResultIds.has(selectedResultId))} onCommentDraftChange={setCommentDraft} onSaveComment={saveComment} headingRef={inspectorHeadingRef} compact />
       </aside>}
     </div>
   </section>;
 }
 
-function DetailPanel({ result, reviewed, reviewing, className, compact, headingRef }: {
+function DetailPanel({ result, reviewed, reviewing, commentDraft, commentError, savingComment, commentSaved, onCommentDraftChange, onSaveComment, className, compact, headingRef }: {
   result: ReconciliationResult | undefined;
   reviewed: boolean;
   reviewing: boolean;
+  commentDraft: string;
+  commentError: CommentError | undefined;
+  savingComment: boolean;
+  commentSaved: boolean;
+  onCommentDraftChange(resultId: string, comment: string): void;
+  onSaveComment(result: ReconciliationResult): void;
   className?: string;
   compact?: boolean;
   headingRef?: RefObject<HTMLHeadingElement | null>;
@@ -279,8 +348,31 @@ function DetailPanel({ result, reviewed, reviewing, className, compact, headingR
       </dl>
       <Evidence title="Broker evidence" trade={result.brokerTrade} missing="Broker evidence is not available for this Result." />
       <Evidence title="OT/MUREX evidence" trade={result.otMurexTrade} missing="OT/MUREX evidence is not available for this Result." />
+      <CommentEditor result={result} draft={commentDraft} error={commentError} saving={savingComment} saved={commentSaved} onDraftChange={onCommentDraftChange} onSave={onSaveComment} />
     </>}
   </aside>;
+}
+
+function CommentEditor({ result, draft, error, saving, saved, onDraftChange, onSave }: {
+  result: ReconciliationResult;
+  draft: string;
+  error: CommentError | undefined;
+  saving: boolean;
+  saved: boolean;
+  onDraftChange(resultId: string, comment: string): void;
+  onSave(result: ReconciliationResult): void;
+}) {
+  const controlId = useId();
+  const errorId = `${controlId}-error`;
+  if (result.status === 'matched') return <section className={styles.comment}><h3>Comment</h3><p>Comments are unavailable for matched Results.</p></section>;
+  return <section className={styles.comment} aria-label="Resolution comment">
+    <h3>Comment</h3>
+    <label htmlFor={controlId}>Comment</label>
+    <textarea id={controlId} value={draft} onChange={(event) => onDraftChange(result.id, event.target.value)} aria-describedby={error ? errorId : undefined} aria-invalid={Boolean(error)} disabled={saving} />
+    <button type="button" onClick={() => onSave(result)} disabled={saving}>{saving ? 'Saving comment…' : 'Save comment'}</button>
+    {saved && <p className={styles.success} role="status">Comment saved.</p>}
+    {error && <div id={errorId} className={styles.error} role="alert"><p>{error.message}</p>{error.retryable && <button type="button" onClick={() => onSave(result)}>Retry comment save</button>}</div>}
+  </section>;
 }
 
 function Evidence({ title, trade, missing }: { title: string; trade: ReconciliationResult['brokerTrade']; missing: string }) {
@@ -288,4 +380,10 @@ function Evidence({ title, trade, missing }: { title: string; trade: Reconciliat
     <div><dt>Trade ID</dt><dd>{trade.tradeId}</dd></div><div><dt>ISIN</dt><dd>{trade.isin}</dd></div><div><dt>Buy / sell</dt><dd>{trade.buySell}</dd></div><div><dt>Currency</dt><dd>{trade.currency}</dd></div>
     <div><dt>Settlement date</dt><dd>{formatDate(trade.settlementDate)}</dd></div><div><dt>Amount</dt><dd>{formatDecimal(trade.amount)}</dd></div><div><dt>Quantity</dt><dd>{formatDecimal(trade.quantity)}</dd></div><div><dt>Price</dt><dd>{formatDecimal(trade.price)}</dd></div>
   </dl>}</section>;
+}
+
+function enqueueWorkspaceMutation<T>(queue: RefObject<Promise<void> | null>, mutation: () => Promise<T>): Promise<T> {
+  const pending = (queue.current ?? Promise.resolve()).then(mutation, mutation);
+  queue.current = pending.then(() => undefined, () => undefined);
+  return pending;
 }

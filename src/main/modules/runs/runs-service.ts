@@ -15,6 +15,7 @@ export class RunInProgressError extends Error { readonly code = 'RUN_IN_PROGRESS
 export class UnsupportedDateError extends Error { readonly code = 'UNAVAILABLE'; constructor() { super('No seeded data for this date.'); } }
 export class ResultNotFoundError extends Error { readonly code = 'RESULT_NOT_FOUND'; constructor() { super('This result is no longer available.'); } }
 export class ResultNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only unmatched results can be reviewed.'); } }
+export class ResultCommentNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Comments are only available for unresolved results.'); } }
 
 export class RunsService {
   private active = false;
@@ -40,6 +41,13 @@ export class RunsService {
     const outcome = this.database.reviewUnmatchedResult(runId, resultId, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
     if (outcome === 'not-found') throw new ResultNotFoundError();
     if (outcome === 'not-eligible') throw new ResultNotEligibleError();
+    return outcome;
+  }
+
+  saveResultComment(runId: string, resultId: string, comment: string): ReconciliationWorkspace {
+    const outcome = this.database.saveResultComment(runId, resultId, comment === '' ? null : comment, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
+    if (outcome === 'not-found') throw new ResultNotFoundError();
+    if (outcome === 'not-eligible') throw new ResultCommentNotEligibleError();
     return outcome;
   }
 

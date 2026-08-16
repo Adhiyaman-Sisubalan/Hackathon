@@ -18,6 +18,7 @@ export interface SeededRunHistory {
 }
 
 export type ResultReviewOutcome = 'not-found' | 'not-eligible';
+export type ResultCommentOutcome = 'not-found' | 'not-eligible';
 
 export class SqliteDatabase {
   readonly db: DatabaseSync;
@@ -137,12 +138,25 @@ export class SqliteDatabase {
     });
   }
 
+  saveResultComment(runId: string, resultId: string, comment: string | null, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | ResultCommentOutcome {
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT status FROM reconciliation_results WHERE id = ? AND run_id = ?').get(`${runId}:${resultId}`, runId) as { status: string } | undefined;
+      if (!row) return 'not-found';
+      if (row.status === 'matched') return 'not-eligible';
+      this.db.prepare("UPDATE reconciliation_results SET comment = ? WHERE id = ? AND run_id = ? AND status IN ('unmatched', 'missing-from-broker', 'missing-from-ot-murex')")
+        .run(comment, `${runId}:${resultId}`, runId);
+      const workspace = this.workspaceSnapshotForRun(runId, seedVersion, thresholds);
+      if (!workspace) throw new Error('Commented result could not be reloaded.');
+      return workspace;
+    });
+  }
+
   private workspaceSnapshotForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
     const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE id = ? AND status = 'completed'`).get(runId) as unknown as RunSummaryRow | undefined;
     if (!run) return null;
-    const rows = this.db.prepare(`SELECT result_rowid, status, reason, reviewed,
+    const rows = this.db.prepare(`SELECT result_rowid, status, reason, reviewed, comment,
       broker.trade_id AS brokerTradeId, broker.isin AS brokerIsin, broker.buy_sell AS brokerBuySell, broker.currency AS brokerCurrency,
       broker.settlement_date AS brokerSettlementDate, broker.amount AS brokerAmount, broker.quantity AS brokerQuantity, broker.price AS brokerPrice,
       ot_murex.trade_id AS otMurexTradeId, ot_murex.isin AS otMurexIsin, ot_murex.buy_sell AS otMurexBuySell, ot_murex.currency AS otMurexCurrency,
@@ -156,7 +170,7 @@ export class SqliteDatabase {
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
-        return { id: JSON.stringify([brokerTrade?.tradeId ?? null, otMurexTrade?.tradeId ?? null]), status: row.status, reason: row.reason, reviewed: Boolean(row.reviewed), brokerTrade, otMurexTrade };
+        return { id: JSON.stringify([brokerTrade?.tradeId ?? null, otMurexTrade?.tradeId ?? null]), status: row.status, reason: row.reason, reviewed: Boolean(row.reviewed), comment: row.comment, brokerTrade, otMurexTrade };
       }),
       reviewProgress: this.reviewProgressForRun(runId)
     });
@@ -192,6 +206,7 @@ interface HydratedResultRow {
   readonly status: 'matched' | 'unmatched' | 'missing-from-broker' | 'missing-from-ot-murex';
   readonly reason: 'amount-mismatch' | 'quantity-mismatch' | 'amount-and-quantity-mismatch' | null;
   readonly reviewed: number;
+  readonly comment: string | null;
   readonly brokerTradeId: string | null; readonly brokerIsin: string | null; readonly brokerBuySell: 'buy' | 'sell' | null; readonly brokerCurrency: string | null;
   readonly brokerSettlementDate: string | null; readonly brokerAmount: string | null; readonly brokerQuantity: string | null; readonly brokerPrice: string | null;
   readonly otMurexTradeId: string | null; readonly otMurexIsin: string | null; readonly otMurexBuySell: 'buy' | 'sell' | null; readonly otMurexCurrency: string | null;

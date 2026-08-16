@@ -10,10 +10,10 @@ const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000
 const otTrade = { source: 'ot-murex' as const, tradeId: 'OT-9', isin: 'GB0000000002', buySell: 'sell' as const, currency: 'GBP', settlementDate: '2026-08-16', amount: '9.25', quantity: '2', price: '4.625' };
 
 function workspace(results: ReconciliationWorkspace['results'] = [
-  { id: 'matched', status: 'matched', reason: null, reviewed: false, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
-  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', reviewed: false, brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
-  { id: 'missing-broker', status: 'missing-from-broker', reason: null, reviewed: false, brokerTrade: null, otMurexTrade: otTrade },
-  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, reviewed: false, brokerTrade, otMurexTrade: null }
+  { id: 'matched', status: 'matched', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
+  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', reviewed: false, comment: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
+  { id: 'missing-broker', status: 'missing-from-broker', reason: null, reviewed: false, comment: null, brokerTrade: null, otMurexTrade: otTrade },
+  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: null }
 ]): ReconciliationWorkspace {
   const matched = results.filter((result) => result.status === 'matched').length;
   return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: results.length, matched, unresolved: results.length - matched, reconciliationRate: matched / results.length, unresolvedRate: (results.length - matched) / results.length }, anomaly: { kind: 'warning', currentUnresolvedRate: .75, historyCount: 5, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: results.filter((result) => result.status === 'unmatched' && result.reviewed).length, totalUnmatched: results.filter((result) => result.status === 'unmatched').length }, results };
@@ -57,7 +57,7 @@ describe('Results workspace table', () => {
 
   it('retains summary and controls for an all-resolved run', () => {
     render(<Results initialSelected={['unmatched', 'missing-from-broker', 'missing-from-ot-murex']} workspace={workspace([
-      { id: 'one', status: 'matched', reason: null, reviewed: false, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
+      { id: 'one', status: 'matched', reason: null, reviewed: false, comment: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
     ])} />);
     expect((screen.getByLabelText('Matched') as HTMLInputElement).checked).toBe(false);
     expect(screen.getByText('Showing 0 results. All results resolved.')).toBeTruthy();
@@ -79,7 +79,7 @@ describe('Results workspace table', () => {
   it('keeps table feedback available for a 1,000-result fixture without virtualization', () => {
     const results = Array.from({ length: 1000 }, (_, index) => ({
       id: `result-${index}`, status: index % 2 === 0 ? 'matched' as const : 'unmatched' as const,
-      reason: index % 2 === 0 ? null : 'amount-mismatch' as const, reviewed: false,
+      reason: index % 2 === 0 ? null : 'amount-mismatch' as const, reviewed: false, comment: null,
       brokerTrade: { ...brokerTrade, tradeId: `BRK-${index}`, amount: String(index + 1) }, otMurexTrade: null
     }));
     render(<Results workspace={workspace(results)} initialSelected={[]} />);
@@ -104,6 +104,106 @@ describe('Results workspace table', () => {
     expect(screen.getByText('Broker evidence is not available for this Result.')).toBeTruthy();
   });
 
+  it('prefills and saves an unresolved comment only after the authoritative workspace confirms it', async () => {
+    const initial = workspace(workspace().results.map((result) => result.id === 'unmatched' ? { ...result, comment: 'Previously saved.' } : result));
+    const updated = workspace(initial.results.map((result) => result.id === 'unmatched' ? { ...result, comment: 'Authoritative value.' } : result));
+    const saveComment = vi.fn(async () => ({ ok: true as const, data: { workspace: updated } }));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: initial } })), saveComment } } as never;
+    const changed = vi.fn();
+    render(<Results workspace={initial} onWorkspaceChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    const comment = screen.getByLabelText('Comment') as HTMLTextAreaElement;
+    expect(comment.value).toBe('Previously saved.');
+    fireEvent.change(comment, { target: { value: 'Awaiting broker response.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    await waitFor(() => expect(saveComment).toHaveBeenCalledWith(initial.runId, 'unmatched', 'Awaiting broker response.'));
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(updated));
+    expect(comment.value).toBe('Authoritative value.');
+    expect(screen.getByText('Comment saved.')).toBeTruthy();
+  });
+
+  it('offers and saves comments for both missing-record statuses with their exact Result IDs', async () => {
+    const initial = workspace();
+    const saveComment = vi.fn(async () => ({ ok: true as const, data: { workspace: initial } }));
+    window.reconciliation = { runs: { saveComment } } as never;
+    render(<Results workspace={initial} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select OT-9' }));
+    const missingBrokerComment = screen.getByRole('textbox', { name: 'Comment' }) as HTMLTextAreaElement;
+    expect(missingBrokerComment).toBeTruthy();
+    fireEvent.change(missingBrokerComment, { target: { value: 'Find the broker trade.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    await waitFor(() => expect(saveComment).toHaveBeenCalledWith(initial.runId, 'missing-broker', 'Find the broker trade.'));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Select BRK-7' })[1]!);
+    const missingOtComment = screen.getByRole('textbox', { name: 'Comment' }) as HTMLTextAreaElement;
+    expect(missingOtComment).toBeTruthy();
+    fireEvent.change(missingOtComment, { target: { value: 'Find the OT/MUREX trade.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    await waitFor(() => expect(saveComment).toHaveBeenLastCalledWith(initial.runId, 'missing-ot', 'Find the OT/MUREX trade.'));
+  });
+
+  it('preserves an unresolved comment draft on retryable failure and explains why matched results cannot save one', async () => {
+    const saveComment = vi.fn(async () => ({ ok: false as const, error: { code: 'PERSISTENCE_FAILED' as const, message: 'Please retry.', retryable: true } }));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: workspace() } })), saveComment } } as never;
+    render(<Results workspace={workspace()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    const comment = screen.getByLabelText('Comment') as HTMLTextAreaElement;
+    fireEvent.change(comment, { target: { value: 'Keep this draft.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Please retry.');
+    expect(comment.getAttribute('aria-invalid')).toBe('true');
+    expect(comment.value).toBe('Keep this draft.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry comment save' }));
+    await waitFor(() => expect(saveComment).toHaveBeenCalledTimes(2));
+    expect(saveComment).toHaveBeenLastCalledWith(expect.any(String), 'unmatched', 'Keep this draft.');
+    await screen.findByRole('alert');
+    fireEvent.change(comment, { target: { value: 'Adjusted draft.' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(comment.getAttribute('aria-invalid')).toBe('false');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Select BRK-7' })[0]!);
+    expect(screen.getByText('Comments are unavailable for matched Results.')).toBeTruthy();
+    expect(saveComment).toHaveBeenCalledTimes(2);
+  });
+
+  it('disables in-flight editing and clears stale save feedback when a draft changes', async () => {
+    let resolveSave!: (value: any) => void;
+    const saveComment = vi.fn(() => new Promise<any>((resolve) => { resolveSave = resolve; }));
+    const initial = workspace();
+    window.reconciliation = { runs: { saveComment } } as never;
+    render(<Results workspace={initial} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    const comment = screen.getByRole('textbox', { name: 'Comment' }) as HTMLTextAreaElement;
+    fireEvent.change(comment, { target: { value: 'First draft.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    expect(comment.disabled).toBe(true);
+    await waitFor(() => expect(saveComment).toHaveBeenCalledTimes(1));
+    resolveSave({ ok: true, data: { workspace: workspace(initial.results.map((result) => result.id === 'unmatched' ? { ...result, comment: 'First draft.' } : result)) } });
+    await waitFor(() => expect(screen.getByText('Comment saved.')).toBeTruthy());
+    fireEvent.change(comment, { target: { value: 'New draft.' } });
+    expect(screen.queryByText('Comment saved.')).toBeNull();
+  });
+
+  it('serializes review and comment workspace mutations so a late review cannot overwrite a newer comment', async () => {
+    let resolveReview!: (value: any) => void;
+    const initial = workspace();
+    const reviewed = workspace(initial.results.map((result) => result.id === 'unmatched' ? { ...result, reviewed: true } : result));
+    const commented = workspace(reviewed.results.map((result) => result.id === 'unmatched' ? { ...result, comment: 'Authoritative comment.' } : result));
+    const reviewResult = vi.fn(() => new Promise<any>((resolve) => { resolveReview = resolve; }));
+    const saveComment = vi.fn(async () => ({ ok: true as const, data: { workspace: commented } }));
+    const changed = vi.fn();
+    window.reconciliation = { runs: { reviewResult, saveComment } } as never;
+    render(<Results workspace={initial} onWorkspaceChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    await waitFor(() => expect(reviewResult).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Comment' }), { target: { value: 'Submitted draft.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    expect(saveComment).not.toHaveBeenCalled();
+    resolveReview({ ok: true, data: { workspace: reviewed } });
+    await waitFor(() => expect(saveComment).toHaveBeenCalledWith(initial.runId, 'unmatched', 'Submitted draft.'));
+    await waitFor(() => expect(changed).toHaveBeenLastCalledWith(commented));
+  });
+
   it('keeps selection and investigation context through a retryable review failure and restores compact inspector focus', async () => {
     const retry = vi.fn(async () => ({ ok: false as const, error: { code: 'PERSISTENCE_FAILED' as const, message: 'Please retry.', retryable: true } }));
     window.reconciliation = { runs: { reviewResult: retry } } as never;
@@ -126,16 +226,17 @@ describe('Results workspace table', () => {
     let resolveSecond!: (value: any) => void;
     const first = new Promise<never>((_resolve, reject) => { rejectFirst = reject; });
     const second = new Promise<any>((resolve) => { resolveSecond = resolve; });
-    const extra = { id: 'unmatched-2', status: 'unmatched' as const, reason: 'quantity-mismatch' as const, reviewed: false, brokerTrade: { ...brokerTrade, tradeId: 'BRK-9' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex' as const, tradeId: 'OT-10' } };
+    const extra = { id: 'unmatched-2', status: 'unmatched' as const, reason: 'quantity-mismatch' as const, reviewed: false, comment: null, brokerTrade: { ...brokerTrade, tradeId: 'BRK-9' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex' as const, tradeId: 'OT-10' } };
     const reviewResult = vi.fn((_runId: string, resultId: string) => resultId === 'unmatched' ? first : second);
     window.reconciliation = { runs: { reviewResult } } as never;
     render(<Results workspace={workspace([...workspace().results, extra])} />);
     fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
     fireEvent.click(screen.getByRole('button', { name: 'Select BRK-9' }));
     fireEvent.click(screen.getByRole('button', { name: 'Selected BRK-9' }));
-    expect(reviewResult).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(reviewResult).toHaveBeenCalledTimes(1));
     rejectFirst(new Error('connection closed'));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    await waitFor(() => expect(reviewResult).toHaveBeenCalledTimes(2));
     resolveSecond({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
     expect((await screen.findByRole('alert')).textContent).toContain('This result is no longer available.');
     expect(screen.queryByRole('button', { name: 'Retry review' })).toBeNull();

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { DashboardChannels, DashboardGetResultSchema } from '../shared/contracts/dashboard.js';
-import { ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunResultSchema, ResultReviewResultSchema, RunWorkspaceGetResultSchema, RunsListResultSchema } from '../shared/contracts/reconciliation.js';
+import { ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunResultSchema, ResultCommentSaveResultSchema, ResultReviewResultSchema, RunWorkspaceGetResultSchema, RunsListResultSchema } from '../shared/contracts/reconciliation.js';
 import type { ReconciliationApi } from '../shared/contracts/preload.js';
 
 const api: ReconciliationApi = {
@@ -33,6 +33,10 @@ const api: ReconciliationApi = {
     async reviewResult(runId, resultId) {
       const response: unknown = await ipcRenderer.invoke(ReconciliationChannels.reviewResult, { version: 1, runId, resultId });
       return ResultReviewResultSchema.parse(response);
+    },
+    async saveComment(runId, resultId, comment) {
+      const response: unknown = await ipcRenderer.invoke(ReconciliationChannels.saveComment, { version: 1, runId, resultId, comment });
+      return ResultCommentSaveResultSchema.parse(response);
     }
   }
 };

@@ -8,7 +8,7 @@ export const ReconciliationTradeSchema = z.object({
 }).readonly();
 export const ReconciliationResultSchema = z.object({
   id: z.string().min(1), status: ReconciliationStatusSchema, reason: z.enum(['amount-mismatch', 'quantity-mismatch', 'amount-and-quantity-mismatch']).nullable(),
-  reviewed: z.boolean().default(false),
+  reviewed: z.boolean().default(false), comment: z.string().nullable().default(null),
   brokerTrade: ReconciliationTradeSchema.nullable(), otMurexTrade: ReconciliationTradeSchema.nullable()
 }).readonly();
 export const ReconciliationMetricsSchema = z.object({ total: z.number().int().nonnegative(), matched: z.number().int().nonnegative(), unresolved: z.number().int().nonnegative(), reconciliationRate: z.number().min(0).max(1), unresolvedRate: z.number().min(0).max(1) }).readonly();
@@ -37,9 +37,12 @@ export const RunWorkspaceGetRequestSchema = z.object({ version: z.literal(1), ru
 export const RunWorkspaceGetResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
 export const ResultReviewRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid(), resultId: z.string().min(1) }).strict();
 export const ResultReviewResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
+export const ResolutionCommentSchema = z.string().max(2_000);
+export const ResultCommentSaveRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid(), resultId: z.string().min(1), comment: ResolutionCommentSchema }).strict();
+export const ResultCommentSaveResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
 export const ReconciliationProgressSchema = z.object({ runId: z.string().uuid().optional(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), phase: z.enum(['started', 'completed', 'failed']) }).readonly();
 
-export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', progress: 'reconciliation.progress.v1' } as const;
+export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', saveComment: 'comment.save.v1', progress: 'reconciliation.progress.v1' } as const;
 export type ReconciliationWorkspace = z.infer<typeof ReconciliationWorkspaceSchema>;
 export type ReconciliationRunAggregate = z.infer<typeof ReconciliationRunAggregateSchema>;
 export type ReconciliationRunSummary = z.infer<typeof ReconciliationRunSummarySchema>;
@@ -47,4 +50,6 @@ export type ReconciliationRunResult = z.infer<typeof ReconciliationRunResultSche
 export type RunsListResult = z.infer<typeof RunsListResultSchema>;
 export type RunWorkspaceGetResult = z.infer<typeof RunWorkspaceGetResultSchema>;
 export type ResultReviewResult = z.infer<typeof ResultReviewResultSchema>;
+export type ResultCommentSaveRequest = z.infer<typeof ResultCommentSaveRequestSchema>;
+export type ResultCommentSaveResult = z.infer<typeof ResultCommentSaveResultSchema>;
 export type ReconciliationProgress = z.infer<typeof ReconciliationProgressSchema>;
