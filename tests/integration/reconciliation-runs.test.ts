@@ -1,16 +1,19 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios.js';
 import { initialSeed } from '../../fixtures/initial-seed.js';
 import { SqliteDatabase } from '../../src/main/adapters/sqlite/database.js';
+import { reconciliationBootstrapConfig } from '../../src/main/bootstrap/reconciliation-config.js';
 import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconciliation.js';
 import { BrokerPreviewNotEligibleError, RunsService, ResultCommentNotEligibleError, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
+import { createReportWorker, type ReportWorker } from '../../src/main/workers/report-worker-client.js';
 
 const directories: string[] = [];
 const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
+const reportSheetNames = ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
 function setup(registry: ScenarioRegistry = reconciliationScenarios) {
@@ -25,6 +28,14 @@ function setup(registry: ScenarioRegistry = reconciliationScenarios) {
 }
 
 describe('persisted reconciliation runs', () => {
+  it('rejects a report worker that exits cleanly without a valid receipt', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'reconciliation-worker-'));
+    directories.push(directory);
+    const workerPath = path.join(directory, 'no-receipt.cjs');
+    writeFileSync(workerPath, "process.exit(0);\n");
+    await expect(createReportWorker(workerPath).generate({} as never, path.join(directory, 'report.tmp.xlsx'))).rejects.toThrow('exited without a valid receipt');
+  });
+
   it('supports every seeded date and does not let an observing progress listener affect a committed run', () => {
     const { database, runs } = setup();
     const thirteenth = runs.run('2026-08-13', () => { throw new Error('renderer closed'); });
@@ -269,6 +280,136 @@ describe('persisted reconciliation runs', () => {
     expect(() => runs.run('2026-08-15', (event) => { phases.push(event.phase); })).toThrow('reload unavailable');
     expect(phases).toEqual(['started']);
     expect(database.db.prepare('SELECT count(*) AS count FROM runs').get()).toEqual({ count: 1 });
+    database.close();
+  });
+
+  it('builds a frozen report snapshot only after every unmatched result is reviewed', () => {
+    const { database, runs } = setup();
+    const run = runs.run('2026-08-15');
+    const first = database.prepareVerifiedReport(run.runId, initialSeed.version, reconciliationBootstrapConfig.anomalyThresholds);
+    expect(first).toEqual({ kind: 'ineligible', outstanding: 2 });
+    for (const result of run.results.filter((item) => item.status === 'unmatched')) runs.reviewUnmatchedResult(run.runId, result.id);
+    const prepared = database.prepareVerifiedReport(run.runId, initialSeed.version, reconciliationBootstrapConfig.anomalyThresholds);
+    if (prepared === 'not-found' || ('kind' in prepared)) throw new Error('Expected report snapshot.');
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(prepared.results.map((result) => result.status)).toEqual(run.results.map((result) => result.status));
+    expect(prepared.reviewProgress).toEqual({ reviewedUnmatched: 2, totalUnmatched: 2 });
+    database.close();
+  });
+
+  it('refuses an unreviewed Run before handing data to the worker', async () => {
+    const { database, runs, directory } = setup();
+    const run = runs.run('2026-08-15');
+    const worker: ReportWorker = { generate: async () => { throw new Error('The worker must not be called.'); } };
+    const reporting = new RunsService(database, initialSeed, {
+      clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => 'report-operation' }, scenarios: reconciliationScenarios,
+      reports: { outputDirectory: path.join(directory, 'mock-output'), worker }
+    });
+    await expect(reporting.saveVerifiedReport(run.runId)).rejects.toMatchObject({ code: 'REPORT_INELIGIBLE', outstanding: 2 });
+    expect(existsSync(path.join(directory, 'mock-output'))).toBe(false);
+    database.close();
+  });
+
+  it('publishes a collision-safe verified report without changing the investigated Run', async () => {
+    const { database, runs, directory } = setup();
+    const run = runs.run('2026-08-15');
+    const unmatched = run.results.filter((result) => result.status === 'unmatched');
+    runs.saveResultComment(run.runId, unmatched[0]!.id, 'Persisted investigation note.');
+    for (const result of unmatched) runs.reviewUnmatchedResult(run.runId, result.id);
+    const before = runs.workspaceForRun(run.runId);
+    const outputDirectory = path.join(directory, 'mock-output');
+    const base = `reconciliation-${run.asOfDate}-${run.runId}`;
+    const existing = path.join(outputDirectory, `${base}.xlsx`);
+    const seen: unknown[] = [];
+    const worker: ReportWorker = { generate: async (snapshot, temporaryPath) => {
+      seen.push(snapshot);
+      writeFileSync(temporaryPath, 'validated workbook');
+      return { temporaryPath, sheetNames: reportSheetNames };
+    } };
+    const reporting = new RunsService(database, initialSeed, {
+      clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => 'report-operation' }, scenarios: reconciliationScenarios,
+      reports: { outputDirectory, worker }
+    });
+    // The existing report is a protected final artifact; publication must choose a suffix.
+    mkdirSync(outputDirectory, { recursive: true });
+    writeFileSync(existing, 'existing final report');
+    const destination = await reporting.saveVerifiedReport(run.runId);
+    expect(destination).toBe(path.join(outputDirectory, `${base}-1.xlsx`));
+    expect(readFileSync(existing, 'utf8')).toBe('existing final report');
+    expect(readFileSync(destination, 'utf8')).toBe('validated workbook');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      reviewProgress: { reviewedUnmatched: 2, totalUnmatched: 2 },
+      results: expect.arrayContaining([expect.objectContaining({ comment: 'Persisted investigation note.' })])
+    });
+    expect(runs.workspaceForRun(run.runId)).toEqual(before);
+    expect(existsSync(path.join(outputDirectory, `.${base}-report-operation.tmp.xlsx`))).toBe(false);
+    database.close();
+  });
+
+  it('cleans up only its temporary report artifact when worker generation fails', async () => {
+    const { database, runs, directory } = setup();
+    const run = runs.run('2026-08-15');
+    for (const result of run.results.filter((item) => item.status === 'unmatched')) runs.reviewUnmatchedResult(run.runId, result.id);
+    const before = runs.workspaceForRun(run.runId);
+    const outputDirectory = path.join(directory, 'mock-output');
+    const worker: ReportWorker = { generate: async (_snapshot, temporaryPath) => {
+      writeFileSync(temporaryPath, 'partial workbook');
+      throw new Error('reopen validation failed');
+    } };
+    const reporting = new RunsService(database, initialSeed, {
+      clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => 'report-operation' }, scenarios: reconciliationScenarios,
+      reports: { outputDirectory, worker }
+    });
+    await expect(reporting.saveVerifiedReport(run.runId)).rejects.toThrow('reopen validation failed');
+    expect(existsSync(path.join(outputDirectory, `.${`reconciliation-${run.asOfDate}-${run.runId}`}-report-operation.tmp.xlsx`))).toBe(false);
+    expect(runs.workspaceForRun(run.runId)).toEqual(before);
+    database.close();
+  });
+
+  it('publishes a zero-unmatched Run without requiring any review', async () => {
+    const { database, runs, directory } = setup();
+    const run = runs.run('2026-08-13');
+    expect(run.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 0 });
+    const outputDirectory = path.join(directory, 'mock-output');
+    const worker: ReportWorker = { generate: async (_snapshot, temporaryPath) => {
+      writeFileSync(temporaryPath, 'validated zero-unmatched workbook');
+      return { temporaryPath, sheetNames: reportSheetNames };
+    } };
+    const reporting = new RunsService(database, initialSeed, {
+      clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => 'report-operation' }, scenarios: reconciliationScenarios,
+      reports: { outputDirectory, worker }
+    });
+    await expect(reporting.saveVerifiedReport(run.runId)).resolves.toBe(path.join(outputDirectory, `reconciliation-${run.asOfDate}-${run.runId}.xlsx`));
+    database.close();
+  });
+
+  it('rejects malformed worker receipts and missing or empty temporary files without changing the Run', async () => {
+    const { database, runs, directory } = setup();
+    const run = runs.run('2026-08-15');
+    for (const result of run.results.filter((item) => item.status === 'unmatched')) runs.reviewUnmatchedResult(run.runId, result.id);
+    const before = runs.workspaceForRun(run.runId);
+    const cases: ReadonlyArray<readonly [string, ReportWorker]> = [
+      ['malformed', { generate: async (_snapshot, temporaryPath) => {
+        writeFileSync(temporaryPath, 'partial workbook');
+        return { temporaryPath, sheetNames: ['Summary', 'Wrong', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] } as never;
+      } }],
+      ['missing', { generate: async (_snapshot, temporaryPath) => ({ temporaryPath, sheetNames: reportSheetNames }) }],
+      ['empty', { generate: async (_snapshot, temporaryPath) => {
+        writeFileSync(temporaryPath, '');
+        return { temporaryPath, sheetNames: reportSheetNames };
+      } }]
+    ];
+    for (const [name, worker] of cases) {
+      const outputDirectory = path.join(directory, `mock-output-${name}`);
+      const reporting = new RunsService(database, initialSeed, {
+        clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => 'report-operation' }, scenarios: reconciliationScenarios,
+        reports: { outputDirectory, worker }
+      });
+      await expect(reporting.saveVerifiedReport(run.runId)).rejects.toThrow();
+      expect(existsSync(path.join(outputDirectory, `.${`reconciliation-${run.asOfDate}-${run.runId}`}-report-operation.tmp.xlsx`))).toBe(false);
+      expect(runs.workspaceForRun(run.runId)).toEqual(before);
+    }
     database.close();
   });
 });

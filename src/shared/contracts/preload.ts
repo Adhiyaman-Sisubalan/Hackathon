@@ -1,5 +1,5 @@
 import type { DashboardGetResult } from './dashboard.js';
-import type { BrokerPreviewResult, ReconciliationProgress, ReconciliationRunResult, ResultCommentSaveResult, ResultReviewResult, RunWorkspaceGetResult, RunsListResult } from './reconciliation.js';
+import type { BrokerPreviewResult, ReconciliationProgress, ReconciliationRunResult, ReportSaveResult, ResultCommentSaveResult, ResultReviewResult, RunWorkspaceGetResult, RunsListResult } from './reconciliation.js';
 
 export interface ReconciliationApi {
   dashboard: { get(): Promise<DashboardGetResult> };
@@ -13,5 +13,6 @@ export interface ReconciliationApi {
     reviewResult(runId: string, resultId: string): Promise<ResultReviewResult>;
     saveComment(runId: string, resultId: string, comment: string): Promise<ResultCommentSaveResult>;
     previewBrokerEmail(runId: string, resultId: string): Promise<BrokerPreviewResult>;
+    saveReport(runId: string): Promise<ReportSaveResult>;
   };
 }

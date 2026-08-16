@@ -301,4 +301,44 @@ describe('Results workspace table', () => {
     expect(screen.getByText('Broker details are unavailable for this Result.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Preview broker email' })).toBeNull();
   });
+
+  it('disables report saving with the exact outstanding unmatched review count', () => {
+    const saveReport = vi.fn();
+    window.reconciliation = { runs: { saveReport } } as never;
+    render(<Results workspace={workspace()} />);
+    const save = screen.getByRole('button', { name: 'Save verified report' });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('1 unmatched review remains.')).toBeTruthy();
+    fireEvent.click(save);
+    expect(saveReport).not.toHaveBeenCalled();
+  });
+
+  it('saves an eligible verified report and retains Results context through a retryable failure', async () => {
+    const eligible = workspace(workspace().results.map((result) => result.status === 'unmatched' ? { ...result, reviewed: true } : result));
+    const saveReport = vi.fn()
+      .mockResolvedValueOnce({ ok: false as const, error: { code: 'REPORT_FAILED' as const, message: 'Workbook validation failed.', retryable: true } })
+      .mockResolvedValueOnce({ ok: true as const, data: { destination: '/mock-output/reconciliation.xlsx' } });
+    window.reconciliation = { runs: { saveReport } } as never;
+    render(<Results workspace={eligible} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save verified report' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Workbook validation failed.');
+    expect(screen.getByLabelText('Reconciliation summary')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry saving report' }));
+    await waitFor(() => expect(saveReport).toHaveBeenCalledTimes(2));
+    expect(saveReport).toHaveBeenLastCalledWith(eligible.runId);
+    expect(await screen.findByText(/Verified report saved to \/mock-output\/reconciliation\.xlsx/)).toBeTruthy();
+  });
+
+  it('clears report feedback only when the displayed Run changes', async () => {
+    const eligible = workspace(workspace().results.map((result) => result.status === 'unmatched' ? { ...result, reviewed: true } : result));
+    const saveReport = vi.fn(async () => ({ ok: true as const, data: { destination: '/mock-output/first.xlsx' } }));
+    window.reconciliation = { runs: { saveReport } } as never;
+    const view = render(<Results workspace={eligible} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save verified report' }));
+    await screen.findByText(/first\.xlsx/);
+    view.rerender(<Results workspace={{ ...eligible, metrics: { ...eligible.metrics } }} />);
+    expect(screen.getByText(/first\.xlsx/)).toBeTruthy();
+    view.rerender(<Results workspace={{ ...eligible, runId: '22222222-2222-4222-8222-222222222222' }} />);
+    await waitFor(() => expect(screen.queryByText(/first\.xlsx/)).toBeNull());
+  });
 });

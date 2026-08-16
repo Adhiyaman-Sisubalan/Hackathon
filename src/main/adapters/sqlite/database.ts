@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import { anomalyContextFor, type AnomalyThresholds } from '../../../domain/metrics/reconciliation-metrics.js';
-import { BrokerEmailDraftSchema, ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
+import { BrokerEmailDraftSchema, ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, RunReportV1Schema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace, type RunReportV1 } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
 export interface DatabaseOptions { path: string; }
@@ -20,6 +20,7 @@ export interface SeededRunHistory {
 export type ResultReviewOutcome = 'not-found' | 'not-eligible';
 export type ResultCommentOutcome = 'not-found' | 'not-eligible';
 export type BrokerPreviewOutcome = 'not-found' | 'not-eligible' | 'no-broker';
+export type ReportPreparationOutcome = 'not-found' | { readonly kind: 'ineligible'; readonly outstanding: number };
 
 export class SqliteDatabase {
   readonly db: DatabaseSync;
@@ -174,6 +175,18 @@ export class SqliteDatabase {
     });
   }
 
+  /** Produces the review gate and report data from the same SQLite transaction. */
+  prepareVerifiedReport(runId: string, seedVersion: string, thresholds: AnomalyThresholds): RunReportV1 | ReportPreparationOutcome {
+    return this.transaction(() => {
+      const workspace = this.workspaceSnapshotForRun(runId, seedVersion, thresholds);
+      if (!workspace) return 'not-found';
+      const outstanding = workspace.reviewProgress.totalUnmatched - workspace.reviewProgress.reviewedUnmatched;
+      if (outstanding > 0) return { kind: 'ineligible', outstanding };
+      // Parse before freezing so an invalid database value can never reach the worker.
+      return deepFreeze(RunReportV1Schema.parse({ version: 1, ...workspace }));
+    });
+  }
+
   private workspaceSnapshotForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
     const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
@@ -267,4 +280,12 @@ function hydrateTrade(row: HydratedResultRow, prefix: 'broker' | 'otMurex'): Tra
 
 function tradeRow(runId: string, trade: Trade): [string, string, string, string, string, string, string, string, string, string, string | null, string | null] {
   return [runId, trade.source, trade.tradeId, trade.isin, trade.buySell, trade.currency, trade.settlementDate, trade.amount, trade.quantity, trade.price, trade.brokerContact?.name ?? null, trade.brokerContact?.recipient ?? null];
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  }
+  return value;
 }

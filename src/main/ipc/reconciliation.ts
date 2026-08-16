@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
-import { BrokerPreviewRequestSchema, BrokerPreviewResultSchema, ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
+import { BrokerPreviewRequestSchema, BrokerPreviewResultSchema, ReconciliationChannels, ReconciliationProgressSchema, ReconciliationRunRequestSchema, ReconciliationRunResultSchema, ReportSaveRequestSchema, ReportSaveResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, ResultReviewRequestSchema, ResultReviewResultSchema, RunWorkspaceGetRequestSchema, RunWorkspaceGetResultSchema, RunsListRequestSchema, RunsListResultSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError } from '../../domain/reconciliation/reconciliation.js';
-import { BrokerPreviewNotEligibleError, BrokerUnavailableError, ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
+import { BrokerPreviewNotEligibleError, BrokerUnavailableError, ReportNotEligibleError, ReportUnavailableError, ResultCommentNotEligibleError, ResultNotEligibleError, ResultNotFoundError, RunInProgressError, UnsupportedDateError } from '../modules/runs/runs-service.js';
 import type { SenderValidator } from './dashboard.js';
 
 export interface ReconciliationCommand {
@@ -11,6 +11,7 @@ export interface ReconciliationCommand {
   reviewUnmatchedResult?(runId: string, resultId: string): ReconciliationWorkspace;
   saveResultComment?(runId: string, resultId: string, comment: string): ReconciliationWorkspace;
   previewBrokerEmail?(runId: string, resultId: string): BrokerEmailDraft;
+  saveVerifiedReport?(runId: string): Promise<string>;
 }
 
 export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>, command: ReconciliationCommand, validSender: SenderValidator): void {
@@ -80,6 +81,19 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       if (error instanceof BrokerPreviewNotEligibleError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed unmatched results can be previewed.', retryable: false, field: 'resultId' } });
       if (error instanceof BrokerUnavailableError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Broker details are unavailable for this result.', retryable: false, field: 'resultId' } });
       return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'QUERY_FAILED', message: 'The broker email draft could not be prepared. Please retry.', retryable: true } });
+    }
+  });
+  ipcMain.handle(ReconciliationChannels.saveReport, async (event: IpcMainInvokeEvent, payload: unknown) => {
+    const request = ReportSaveRequestSchema.safeParse(payload);
+    if (!validSender(event) || !request.success) return ReportSaveResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'This request is not permitted.', retryable: false } });
+    try {
+      if (!command.saveVerifiedReport) throw new ReportUnavailableError();
+      return ReportSaveResultSchema.parse({ ok: true, data: { destination: await command.saveVerifiedReport(request.data.runId) } });
+    } catch (error) {
+      if (error instanceof ReportNotEligibleError) return ReportSaveResultSchema.parse({ ok: false, error: { code: 'REPORT_INELIGIBLE', message: error.message, retryable: false } });
+      if (error instanceof ResultNotFoundError) return ReportSaveResultSchema.parse({ ok: false, error: { code: 'RUN_NOT_FOUND', message: 'This run is no longer available.', retryable: false } });
+      if (error instanceof ReportUnavailableError) return ReportSaveResultSchema.parse({ ok: false, error: { code: 'UNAVAILABLE', message: error.message, retryable: true } });
+      return ReportSaveResultSchema.parse({ ok: false, error: { code: 'REPORT_FAILED', message: 'The verified report could not be saved. Please retry.', retryable: true } });
     }
   });
   ipcMain.handle(ReconciliationChannels.run, (event: IpcMainInvokeEvent, payload: unknown) => {

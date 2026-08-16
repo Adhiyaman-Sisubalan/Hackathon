@@ -11,6 +11,7 @@ type ReconciliationResult = ReconciliationWorkspace['results'][number];
 type ReviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 type CommentError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 type PreviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
+type ReportError = { readonly message: string; readonly retryable: boolean };
 
 type ResultRow = {
   readonly result: ReconciliationResult;
@@ -132,12 +133,17 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const [previewDrafts, setPreviewDrafts] = useState<ReadonlyMap<string, BrokerEmailDraft>>(new Map());
   const [previewErrors, setPreviewErrors] = useState<ReadonlyMap<string, PreviewError>>(new Map());
   const [previewingResultIds, setPreviewingResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [savingReport, setSavingReport] = useState(false);
+  const [reportError, setReportError] = useState<ReportError>();
+  const [reportDestination, setReportDestination] = useState<string>();
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
   const inspectorInvokerRef = useRef<HTMLButtonElement>(null);
   const previewHeadingRef = useRef<HTMLHeadingElement>(null);
   const previewButtonRef = useRef<HTMLButtonElement>(null);
+  const reportWorkspaceRunIdRef = useRef(workspace.runId);
+  const reportOperationRef = useRef(0);
   const inFlightReviewIds = useRef(new Set<string>());
   const inFlightCommentIds = useRef(new Set<string>());
   const inFlightPreviewIds = useRef(new Set<string>());
@@ -165,7 +171,18 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
+  const outstandingReviews = workspace.reviewProgress.totalUnmatched - workspace.reviewProgress.reviewedUnmatched;
   const hasActiveFilters = selected.length !== reconciliationStatuses.length;
+
+  useEffect(() => {
+    if (reportWorkspaceRunIdRef.current !== workspace.runId) {
+      reportWorkspaceRunIdRef.current = workspace.runId;
+      reportOperationRef.current += 1;
+      setSavingReport(false);
+      setReportError(undefined);
+      setReportDestination(undefined);
+    }
+  }, [workspace.runId]);
 
   const review = async (result: ReconciliationResult) => {
     const resultId = result.id;
@@ -293,6 +310,27 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
     setPreviewDrafts((current) => { const next = new Map(current); next.delete(resultId); return next; });
     requestAnimationFrame(() => previewButtonRef.current?.focus());
   };
+  const saveReport = async () => {
+    if (savingReport || outstandingReviews > 0) return;
+    const runId = workspace.runId;
+    const operation = reportOperationRef.current + 1;
+    reportOperationRef.current = operation;
+    setSavingReport(true); setReportError(undefined); setReportDestination(undefined);
+    try {
+      if (!window.reconciliation) {
+        if (reportOperationRef.current === operation && reportWorkspaceRunIdRef.current === runId) setReportError({ message: 'Verified report saving is unavailable.', retryable: false });
+        return;
+      }
+      const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.saveReport(runId));
+      if (reportOperationRef.current !== operation || reportWorkspaceRunIdRef.current !== runId) return;
+      if (response.ok) setReportDestination(response.data.destination);
+      else setReportError({ message: response.error.message, retryable: response.error.retryable });
+    } catch {
+      if (reportOperationRef.current === operation && reportWorkspaceRunIdRef.current === runId) setReportError({ message: 'The verified report could not be saved. Please retry.', retryable: true });
+    } finally {
+      if (reportOperationRef.current === operation && reportWorkspaceRunIdRef.current === runId) setSavingReport(false);
+    }
+  };
   const closeInspector = () => {
     compactInspectorOpenRef.current = false;
     setCompactInspectorOpen(false);
@@ -319,6 +357,14 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
     <p className={styles.eyebrow}>Completed reconciliation</p><h1 ref={headingRef} id="results-title" tabIndex={-1}>Results</h1>
     <p>Run {workspace.runId} · As-of date {formatDate(workspace.asOfDate)}</p>
     <SummaryStrip summary={workspace} />
+    <section className={styles.report} aria-label="Verified report">
+      <h2>Verified report</h2>
+      {outstandingReviews > 0 ? <p>Save is available after {outstandingReviews} unmatched {outstandingReviews === 1 ? 'result is' : 'results are'} reviewed.</p> : <p>All unmatched Results are reviewed. The report will contain the authoritative saved Run.</p>}
+      <button type="button" onClick={() => void saveReport()} disabled={savingReport || outstandingReviews > 0} aria-describedby={outstandingReviews > 0 ? 'report-review-gate' : undefined}>{savingReport ? 'Saving verified report…' : 'Save verified report'}</button>
+      {outstandingReviews > 0 && <p id="report-review-gate">{outstandingReviews} unmatched {outstandingReviews === 1 ? 'review remains' : 'reviews remain'}.</p>}
+      {reportDestination && <p className={styles.success} role="status">Verified report saved to {reportDestination}.</p>}
+      {reportError && <div className={styles.error} role="alert"><p>{reportError.message}</p>{reportError.retryable && <button type="button" onClick={() => void saveReport()}>Retry saving report</button>}</div>}
+    </section>
     {loadError && <div className={styles.error} role="alert"><p>Results could not be refreshed: {loadError}</p>{onRetry && <button type="button" onClick={onRetry}>Retry</button>}</div>}
     <div className={styles.toolbar}>
       <fieldset><legend>Status filters</legend><div className={styles.filters}>{reconciliationStatuses.map((status) => <label key={status}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /> {statusLabels[status]}</label>)}</div></fieldset>

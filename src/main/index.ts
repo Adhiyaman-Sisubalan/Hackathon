@@ -11,6 +11,7 @@ import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios
 import { isTrustedRendererSender, registerDashboardHandlers, type DashboardQuery } from './ipc/dashboard.js';
 import { registerReconciliationHandlers, type ReconciliationCommand } from './ipc/reconciliation.js';
 import type { Migration } from './adapters/sqlite/database.js';
+import { createReportWorker } from './workers/report-worker-client.js';
 
 const currentDirectory = __dirname;
 const preloadPath = path.join(currentDirectory, 'preload.js');
@@ -33,7 +34,13 @@ app.whenReady().then(async () => {
   let reconciliation: ReconciliationCommand;
   try {
     const database = new SqliteDatabase({ path: path.join(app.getPath('userData'), 'reconciliation.sqlite') });
-    const runs = new RunsService(database, initialSeed, { clock: { now: () => new Date().toISOString() }, ids: { next: randomUUID }, scenarios: reconciliationScenarios });
+    const runs = new RunsService(database, initialSeed, {
+      clock: { now: () => new Date().toISOString() }, ids: { next: randomUUID }, scenarios: reconciliationScenarios,
+      reports: {
+        outputDirectory: process.env.RECONCILIATION_REPORT_OUTPUT ?? path.join(app.getPath('userData'), 'mock-output'),
+        worker: createReportWorker(path.join(currentDirectory, 'report-worker.js'))
+      }
+    });
     bootstrapApplication({ migrate: () => runs.migrate(migrations()), seed: () => runs.seed(), latestSummary: () => runs.latestSummary() });
     dashboard = runs;
     reconciliation = runs;
@@ -46,6 +53,7 @@ app.whenReady().then(async () => {
       reviewUnmatchedResult: () => { throw new Error('Reconciliation bootstrap failed.'); },
       saveResultComment: () => { throw new Error('Reconciliation bootstrap failed.'); },
       previewBrokerEmail: () => { throw new Error('Reconciliation bootstrap failed.'); }
+      , saveVerifiedReport: async () => { throw new Error('Reconciliation bootstrap failed.'); }
     };
   }
   registerDashboardHandlers(ipcMain, dashboard, (event) => isTrustedRendererSender(event, rendererUrl));

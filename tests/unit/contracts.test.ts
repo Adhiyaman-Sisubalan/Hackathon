@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DashboardGetRequestSchema, DashboardGetResultSchema } from '../../src/shared/contracts/dashboard.js';
-import { BrokerPreviewRequestSchema, BrokerPreviewResultSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema } from '../../src/shared/contracts/reconciliation.js';
+import { BrokerPreviewRequestSchema, BrokerPreviewResultSchema, ReportSaveRequestSchema, ReportSaveResultSchema, ReportWorkerReceiptSchema, ResultCommentSaveRequestSchema, ResultCommentSaveResultSchema, RunReportV1Schema } from '../../src/shared/contracts/reconciliation.js';
 
 describe('dashboard contract', () => {
   it('accepts only the versioned request and safe result envelope', () => {
@@ -28,5 +28,17 @@ describe('result comment contract', () => {
     expect(ResultCommentSaveRequestSchema.safeParse({ version: 1, runId, resultId: 'logical-result', comment: 'Investigating.', extra: true }).success).toBe(false);
     expect(ResultCommentSaveRequestSchema.safeParse({ version: 2, runId, resultId: 'logical-result', comment: 'Investigating.' }).success).toBe(false);
     expect(ResultCommentSaveResultSchema.safeParse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'Retry', retryable: true } }).success).toBe(true);
+  });
+});
+
+describe('verified report contract', () => {
+  it('accepts only an identity request and a complete immutable authoritative snapshot', () => {
+    const runId = '11111111-1111-4111-8111-111111111111';
+    expect(ReportSaveRequestSchema.safeParse({ version: 1, runId }).success).toBe(true);
+    expect(ReportSaveRequestSchema.safeParse({ version: 1, runId, destination: '/forged.xlsx' }).success).toBe(false);
+    expect(ReportSaveResultSchema.safeParse({ ok: true, data: { destination: '/mock/reconciliation.xlsx' } }).success).toBe(true);
+    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] }).success).toBe(true);
+    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Wrong'] }).success).toBe(false);
+    expect(RunReportV1Schema.safeParse({ version: 1, runId, asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 0, matched: 0, unresolved: 0, reconciliationRate: 0, unresolvedRate: 0 }, anomaly: { kind: 'insufficient-history', currentUnresolvedRate: 0, historyCount: 0, baselineUnresolvedRate: null }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 0 }, results: [] }).success).toBe(true);
   });
 });

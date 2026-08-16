@@ -26,10 +26,14 @@ export const ReconciliationRunAggregateSchema = ReconciliationRunIdentitySchema.
 const ReconciliationRunSummaryObjectSchema = ReconciliationRunIdentitySchema.extend({ anomaly: ReconciliationAnomalySchema });
 export const ReconciliationRunSummarySchema = ReconciliationRunSummaryObjectSchema.readonly();
 export const ReviewProgressSchema = z.object({ reviewedUnmatched: z.number().int().nonnegative(), totalUnmatched: z.number().int().nonnegative() }).refine((value) => value.reviewedUnmatched <= value.totalUnmatched).readonly();
-export const ReconciliationWorkspaceSchema = ReconciliationRunSummaryObjectSchema.extend({
+const ReconciliationWorkspaceObjectSchema = ReconciliationRunSummaryObjectSchema.extend({
   results: z.array(ReconciliationResultSchema).readonly(),
   reviewProgress: ReviewProgressSchema.default({ reviewedUnmatched: 0, totalUnmatched: 0 })
-}).readonly();
+});
+export const ReconciliationWorkspaceSchema = ReconciliationWorkspaceObjectSchema.readonly();
+// The report is deliberately a named, immutable snapshot contract.  It is built
+// in main from one database transaction and is the only data a workbook worker sees.
+export const RunReportV1Schema = ReconciliationWorkspaceObjectSchema.extend({ version: z.literal(1) }).readonly();
 
 export const ReconciliationRunRequestSchema = z.object({ version: z.literal(1), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict();
 export const ReconciliationRunResultSchema = result(z.object({ workspace: ReconciliationWorkspaceSchema }).readonly());
@@ -51,9 +55,22 @@ export const BrokerEmailDraftSchema = z.object({
   status: z.literal('Draft'), brokerName: z.string().min(1), recipient: z.email(), subject: z.string().min(1), body: z.string().min(1), rows: z.array(BrokerEmailDraftRowSchema).min(1).readonly()
 }).readonly();
 export const BrokerPreviewResultSchema = result(z.object({ draft: BrokerEmailDraftSchema }).readonly());
+export const ReportSaveRequestSchema = z.object({ version: z.literal(1), runId: z.string().uuid() }).strict();
+export const ReportSaveResultSchema = result(z.object({ destination: z.string().min(1) }).readonly());
+export const ReportSheetNamesSchema = z.tuple([
+  z.literal('Summary'),
+  z.literal('Matched'),
+  z.literal('Unmatched'),
+  z.literal('Missing from Broker'),
+  z.literal('Missing from OT-MUREX')
+]).readonly();
+export const ReportWorkerReceiptSchema = z.object({
+  temporaryPath: z.string().min(1),
+  sheetNames: ReportSheetNamesSchema
+}).readonly();
 export const ReconciliationProgressSchema = z.object({ runId: z.string().uuid().optional(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), phase: z.enum(['started', 'completed', 'failed']) }).readonly();
 
-export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', saveComment: 'comment.save.v1', previewBroker: 'broker.preview.v1', progress: 'reconciliation.progress.v1' } as const;
+export const ReconciliationChannels = { run: 'reconciliation.run.v1', listRuns: 'runs.list.v1', getWorkspace: 'run.workspace.get.v1', reviewResult: 'result.review.v1', saveComment: 'comment.save.v1', previewBroker: 'broker.preview.v1', saveReport: 'report.save.v1', progress: 'reconciliation.progress.v1' } as const;
 export type ReconciliationWorkspace = z.infer<typeof ReconciliationWorkspaceSchema>;
 export type ReconciliationRunAggregate = z.infer<typeof ReconciliationRunAggregateSchema>;
 export type ReconciliationRunSummary = z.infer<typeof ReconciliationRunSummarySchema>;
@@ -65,4 +82,7 @@ export type ResultCommentSaveRequest = z.infer<typeof ResultCommentSaveRequestSc
 export type ResultCommentSaveResult = z.infer<typeof ResultCommentSaveResultSchema>;
 export type BrokerEmailDraft = z.infer<typeof BrokerEmailDraftSchema>;
 export type BrokerPreviewResult = z.infer<typeof BrokerPreviewResultSchema>;
+export type RunReportV1 = z.infer<typeof RunReportV1Schema>;
+export type ReportSaveResult = z.infer<typeof ReportSaveResultSchema>;
+export type ReportWorkerReceipt = z.infer<typeof ReportWorkerReceiptSchema>;
 export type ReconciliationProgress = z.infer<typeof ReconciliationProgressSchema>;
