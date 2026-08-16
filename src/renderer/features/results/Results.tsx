@@ -8,6 +8,7 @@ import { SummaryStrip } from '../../components/SummaryStrip.js';
 import styles from './Results.module.css';
 
 type ReconciliationResult = ReconciliationWorkspace['results'][number];
+type ReviewError = { readonly resultId: string; readonly message: string; readonly retryable: boolean };
 
 type ResultRow = {
   readonly result: ReconciliationResult;
@@ -119,11 +120,15 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
 }) {
   const [selected, setSelected] = useState<readonly ReconciliationStatus[]>(initialSelected);
   const [selectedResultId, setSelectedResultId] = useState<string>();
-  const [reviewError, setReviewError] = useState<string>();
+  const [reviewErrors, setReviewErrors] = useState<ReadonlyMap<string, ReviewError>>(new Map());
+  const [reviewingResultIds, setReviewingResultIds] = useState<ReadonlySet<string>>(new Set());
+  const [locallyReviewedResultIds, setLocallyReviewedResultIds] = useState<ReadonlySet<string>>(new Set());
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
   const inspectorInvokerRef = useRef<HTMLButtonElement>(null);
+  const inFlightReviewIds = useRef(new Set<string>());
+  const compactInspectorOpenRef = useRef(false);
   useEffect(() => { headingRef.current?.focus(); }, []);
   const data = useMemo(() => workspace.results.map(rowFor), [workspace.results]);
   const table = useTable({
@@ -137,34 +142,72 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   });
   const visibleRows = table.getRowModel().rows;
   const selectedResult = workspace.results.find((result) => result.id === selectedResultId);
+  const selectedReviewed = Boolean(selectedResult?.reviewed || (selectedResultId && locallyReviewedResultIds.has(selectedResultId)));
+  const selectedReviewing = Boolean(selectedResultId && reviewingResultIds.has(selectedResultId));
+  const selectedReviewError = selectedResultId ? reviewErrors.get(selectedResultId) : undefined;
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
   const hasActiveFilters = selected.length !== reconciliationStatuses.length;
 
   const review = async (result: ReconciliationResult) => {
-    if (result.status !== 'unmatched' || result.reviewed) return;
-    setReviewError(undefined);
-    if (!window.reconciliation) { setReviewError('Result review is unavailable. Please retry.'); return; }
-    const response = await window.reconciliation.runs.reviewResult(workspace.runId, result.id);
-    if (response.ok) {
-      onWorkspaceChanged?.(response.data.workspace);
-      return;
+    const resultId = result.id;
+    if (result.status !== 'unmatched' || result.reviewed || locallyReviewedResultIds.has(resultId) || inFlightReviewIds.current.has(resultId)) return;
+    inFlightReviewIds.current.add(resultId);
+    setReviewingResultIds((current) => new Set(current).add(resultId));
+    setReviewErrors((current) => {
+      const next = new Map(current);
+      next.delete(resultId);
+      return next;
+    });
+    try {
+      if (!window.reconciliation) {
+        setReviewErrors((current) => new Map(current).set(resultId, { resultId, message: 'Result review is unavailable.', retryable: false }));
+        return;
+      }
+      const response = await window.reconciliation.runs.reviewResult(workspace.runId, resultId);
+      if (response.ok) {
+        setLocallyReviewedResultIds((current) => new Set(current).add(resultId));
+        setReviewErrors((current) => {
+          const next = new Map(current);
+          next.delete(resultId);
+          return next;
+        });
+        onWorkspaceChanged?.(response.data.workspace);
+        return;
+      }
+      setReviewErrors((current) => new Map(current).set(resultId, { resultId, message: response.error.message, retryable: response.error.retryable }));
+    } catch {
+      setReviewErrors((current) => new Map(current).set(resultId, { resultId, message: 'The result review could not be saved. Please retry.', retryable: true }));
+    } finally {
+      inFlightReviewIds.current.delete(resultId);
+      setReviewingResultIds((current) => {
+        const next = new Set(current);
+        next.delete(resultId);
+        return next;
+      });
     }
-    setReviewError(response.error.message);
   };
   const selectResult = (result: ReconciliationResult) => {
     setSelectedResultId(result.id);
-    setReviewError(undefined);
     void review(result);
   };
   const closeInspector = () => {
+    compactInspectorOpenRef.current = false;
     setCompactInspectorOpen(false);
     requestAnimationFrame(() => inspectorInvokerRef.current?.focus());
   };
   useEffect(() => {
+    compactInspectorOpenRef.current = compactInspectorOpen;
     if (compactInspectorOpen) inspectorHeadingRef.current?.focus();
   }, [compactInspectorOpen]);
+  useEffect(() => {
+    const media = window.matchMedia?.('(max-width: 800px)');
+    if (!media) return;
+    const closeAfterViewportChange = () => { if (compactInspectorOpenRef.current && !media.matches) closeInspector(); };
+    media.addEventListener?.('change', closeAfterViewportChange);
+    return () => media.removeEventListener?.('change', closeAfterViewportChange);
+  }, []);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && compactInspectorOpen) { event.preventDefault(); closeInspector(); } };
     window.addEventListener('keydown', closeOnEscape);
@@ -197,25 +240,27 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
             {canSort ? <button type="button" className={styles.sortButton} onClick={() => header.column.toggleSorting()}>{String(header.column.columnDef.header)}{sorted === 'asc' ? ' ↑' : sorted === 'desc' ? ' ↓' : ''}</button> : String(header.column.columnDef.header)}
           </th>;
         })}</tr>)}</thead>
-        <tbody>{visibleRows.map((row) => <tr key={row.id} className={styles.row} data-selected={selectedResultId === row.id} aria-selected={selectedResultId === row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} className={cell.column.columnDef.meta?.numeric ? styles.numeric : cell.column.columnDef.meta?.date ? styles.date : undefined}>
-          {cell.column.id === 'counterparty' ? <button type="button" className={styles.select} aria-label={`Select ${row.original.tradeId ?? 'reconciliation record'}`} aria-pressed={selectedResultId === row.id} aria-describedby={reviewError && selectedResultId === row.id ? 'review-error' : undefined} onClick={() => selectResult(row.original.result)}>{row.getValue<string>('counterparty')}</button> : <table.FlexRender cell={cell} />}
+        <tbody>{visibleRows.map((row) => <tr key={row.id} className={styles.row} data-selected={selectedResultId === row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} className={cell.column.columnDef.meta?.numeric ? styles.numeric : cell.column.columnDef.meta?.date ? styles.date : undefined}>
+          {cell.column.id === 'counterparty' ? <button type="button" className={styles.select} aria-label={`${selectedResultId === row.id ? 'Selected' : 'Select'} ${row.original.tradeId ?? 'reconciliation record'}`} aria-describedby={selectedReviewError && selectedResultId === row.id ? 'review-error' : selectedResultId === row.id ? 'selected-result-status' : undefined} onClick={() => selectResult(row.original.result)}>{row.getValue<string>('counterparty')}</button> : <table.FlexRender cell={cell} />}
         </td>)}</tr>)}</tbody>
         </table>
       </div>
+      {selectedResult && <p id="selected-result-status" className={styles.visuallyHidden}>Selected Result: {selectedResult.brokerTrade?.tradeId ?? selectedResult.otMurexTrade?.tradeId ?? 'reconciliation record'}.</p>}
       <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
-      <DetailPanel result={selectedResult} reviewError={reviewError} onRetry={() => selectedResult && void review(selectedResult)} className={styles.detailPanel} />
+      {selectedReviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {selectedReviewError.message}</p>{selectedReviewError.retryable && <button type="button" onClick={() => selectedResult && void review(selectedResult)}>Retry review</button>}</div>}
+      <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} className={styles.detailPanel} />
       {compactInspectorOpen && <aside className={styles.compactInspector} aria-labelledby="inspector-title">
         <button type="button" className={styles.closeInspector} onClick={closeInspector}>Close inspector</button>
-        <DetailPanel result={selectedResult} reviewError={reviewError} onRetry={() => selectedResult && void review(selectedResult)} headingRef={inspectorHeadingRef} compact />
+        <DetailPanel result={selectedResult} reviewed={selectedReviewed} reviewing={selectedReviewing} headingRef={inspectorHeadingRef} compact />
       </aside>}
     </div>
   </section>;
 }
 
-function DetailPanel({ result, reviewError, onRetry, className, compact, headingRef }: {
+function DetailPanel({ result, reviewed, reviewing, className, compact, headingRef }: {
   result: ReconciliationResult | undefined;
-  reviewError?: string;
-  onRetry: () => void;
+  reviewed: boolean;
+  reviewing: boolean;
   className?: string;
   compact?: boolean;
   headingRef?: RefObject<HTMLHeadingElement | null>;
@@ -230,9 +275,8 @@ function DetailPanel({ result, reviewError, onRetry, className, compact, heading
         <div><dt>Reconciliation key</dt><dd>{key}</dd></div>
         <div><dt>Status</dt><dd><ReconciliationStatusText status={result.status} /></dd></div>
         <div><dt>Reason</dt><dd>{result.reason?.replaceAll('-', ' ') ?? '—'}</dd></div>
-        {result.status === 'unmatched' && <div><dt>Review</dt><dd>{result.reviewed ? 'Reviewed' : 'Saving review…'}</dd></div>}
+        {result.status === 'unmatched' && <div><dt>Review</dt><dd>{reviewed ? 'Reviewed' : reviewing ? 'Saving review…' : 'Not reviewed'}</dd></div>}
       </dl>
-      {reviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {reviewError}</p><button type="button" onClick={onRetry}>Retry review</button></div>}
       <Evidence title="Broker evidence" trade={result.brokerTrade} missing="Broker evidence is not available for this Result." />
       <Evidence title="OT/MUREX evidence" trade={result.otMurexTrade} missing="OT/MUREX evidence is not available for this Result." />
     </>}

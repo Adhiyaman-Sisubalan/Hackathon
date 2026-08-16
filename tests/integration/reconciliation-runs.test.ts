@@ -21,7 +21,7 @@ function setup(registry: ScenarioRegistry = reconciliationScenarios) {
   const runs = new RunsService(database, initialSeed, { clock: { now: () => '2026-08-15T12:00:00.000Z' }, ids: { next: () => ids.shift()! }, scenarios: registry });
   runs.migrate(migrations);
   runs.seed();
-  return { database, runs };
+  return { database, runs, directory };
 }
 
 describe('persisted reconciliation runs', () => {
@@ -117,7 +117,7 @@ describe('persisted reconciliation runs', () => {
   });
 
   it('persists idempotent unmatched reviews per run without reviewing other statuses or reruns', () => {
-    const { database, runs } = setup();
+    const { database, runs, directory } = setup();
     const first = runs.run('2026-08-15');
     const unmatched = first.results.find((result) => result.status === 'unmatched')!;
     const missing = first.results.find((result) => result.status === 'missing-from-broker')!;
@@ -130,6 +130,31 @@ describe('persisted reconciliation runs', () => {
     expect(runs.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
     const rerun = runs.run('2026-08-15');
     expect(rerun.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 1 });
+    database.close();
+    const restoredDatabase = new SqliteDatabase({ path: path.join(directory, 'runs.sqlite') });
+    const restoredRuns = new RunsService(restoredDatabase, initialSeed);
+    restoredRuns.migrate(migrations);
+    restoredRuns.seed();
+    expect(restoredRuns.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    restoredDatabase.close();
+  });
+
+  it('backfills existing result rows as unreviewed when the review migration is applied', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'reconciliation-review-upgrade-'));
+    directories.push(directory);
+    const database = new SqliteDatabase({ path: path.join(directory, 'upgrade.sqlite') });
+    database.migrate(migrations.slice(0, 3));
+    const runId = '99999999-9999-4999-8999-999999999999';
+    const resultId = JSON.stringify([null, null]);
+    database.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
+      VALUES (?, 'completed', '2026-08-15T00:00:00.000Z', '2026-08-15', 1, 0, 1, 0, 1)`).run(runId);
+    database.db.prepare(`INSERT INTO reconciliation_results (id, run_id, status, reason, broker_trade_id, ot_murex_trade_id)
+      VALUES (?, ?, 'unmatched', 'amount-mismatch', NULL, NULL)`).run(`${runId}:${resultId}`, runId);
+    database.migrate(migrations);
+    expect(database.db.prepare('SELECT reviewed FROM reconciliation_results WHERE run_id = ?').get(runId)).toEqual({ reviewed: 0 });
+    const runs = new RunsService(database, initialSeed);
+    runs.seed();
+    expect(runs.workspaceForRun(runId)).toMatchObject({ reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 1 }, results: [{ id: resultId, reviewed: false }] });
     database.close();
   });
 

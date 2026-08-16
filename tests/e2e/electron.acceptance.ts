@@ -39,6 +39,13 @@ async function runAcceptance(): Promise<void> {
     await page.getByText('Broker evidence').waitFor();
     await page.getByText('OT/MUREX evidence').waitFor();
     await page.getByText('1 / 1', { exact: true }).waitFor();
+    await page.setViewportSize({ width: 700, height: 900 });
+    const openInspector = page.getByRole('button', { name: 'Open inspector' });
+    await openInspector.click();
+    await page.getByRole('heading', { name: 'Result detail' }).last().waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Open inspector');
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     const runs = page.getByRole('button', { name: 'Reconciliation Runs' });
     await runs.focus();

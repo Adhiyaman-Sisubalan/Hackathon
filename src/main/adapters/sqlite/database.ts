@@ -17,7 +17,7 @@ export interface SeededRunHistory {
   readonly unresolvedRate: number;
 }
 
-export type ResultReviewOutcome = 'reviewed' | 'not-found' | 'not-eligible';
+export type ResultReviewOutcome = 'not-found' | 'not-eligible';
 
 export class SqliteDatabase {
   readonly db: DatabaseSync;
@@ -47,11 +47,12 @@ export class SqliteDatabase {
     }
   }
 
-  transaction(action: () => void): void {
+  transaction<T>(action: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      action();
+      const result = action();
       this.db.exec('COMMIT');
+      return result;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
@@ -121,6 +122,22 @@ export class SqliteDatabase {
   }
 
   workspaceForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
+    return this.workspaceSnapshotForRun(runId, seedVersion, thresholds);
+  }
+
+  reviewUnmatchedResult(runId: string, resultId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | ResultReviewOutcome {
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT status FROM reconciliation_results WHERE id = ? AND run_id = ?').get(`${runId}:${resultId}`, runId) as { status: string } | undefined;
+      if (!row) return 'not-found';
+      if (row.status !== 'unmatched') return 'not-eligible';
+      this.db.prepare("UPDATE reconciliation_results SET reviewed = 1 WHERE id = ? AND run_id = ? AND status = 'unmatched'").run(`${runId}:${resultId}`, runId);
+      const workspace = this.workspaceSnapshotForRun(runId, seedVersion, thresholds);
+      if (!workspace) throw new Error('Reviewed result could not be reloaded.');
+      return workspace;
+    });
+  }
+
+  private workspaceSnapshotForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
     const run = this.db.prepare(`SELECT id AS runId, as_of_date AS asOfDate, completed_at AS completedAt,
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE id = ? AND status = 'completed'`).get(runId) as unknown as RunSummaryRow | undefined;
@@ -143,18 +160,6 @@ export class SqliteDatabase {
       }),
       reviewProgress: this.reviewProgressForRun(runId)
     });
-  }
-
-  reviewUnmatchedResult(runId: string, resultId: string): ResultReviewOutcome {
-    let outcome: ResultReviewOutcome = 'not-found';
-    this.transaction(() => {
-      const row = this.db.prepare('SELECT status FROM reconciliation_results WHERE id = ? AND run_id = ?').get(`${runId}:${resultId}`, runId) as { status: string } | undefined;
-      if (!row) { outcome = 'not-found'; return; }
-      if (row.status !== 'unmatched') { outcome = 'not-eligible'; return; }
-      this.db.prepare("UPDATE reconciliation_results SET reviewed = 1 WHERE id = ? AND run_id = ? AND status = 'unmatched'").run(`${runId}:${resultId}`, runId);
-      outcome = 'reviewed';
-    });
-    return outcome;
   }
 
   close(): void { this.db.close(); }

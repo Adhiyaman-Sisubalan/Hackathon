@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Results } from '../../src/renderer/features/results/Results.js';
 import type { ReconciliationWorkspace } from '../../src/shared/contracts/reconciliation.js';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); window.reconciliation = undefined; });
 
 const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000000001', buySell: 'buy' as const, currency: 'USD', settlementDate: '2026-08-15', amount: '1234.500', quantity: '20.00', price: '61.7250' };
 const otTrade = { source: 'ot-murex' as const, tradeId: 'OT-9', isin: 'GB0000000002', buySell: 'sell' as const, currency: 'GBP', settlementDate: '2026-08-16', amount: '9.25', quantity: '2', price: '4.625' };
@@ -44,7 +44,7 @@ describe('Results workspace table', () => {
     expect(screen.getByRole('columnheader', { name: 'Trade ID' })).toBeTruthy();
     const row = screen.getAllByRole('row')[1]!;
     fireEvent.click(within(row).getByRole('button', { name: /Select/ }));
-    expect(row.getAttribute('aria-selected')).toBe('true');
+    expect(within(row).getByRole('button', { name: /Selected/ }).getAttribute('aria-pressed')).toBeNull();
     expect(JSON.stringify(input)).toBe(before);
   });
 
@@ -99,6 +99,7 @@ describe('Results workspace table', () => {
     expect(screen.getByText('OT/MUREX evidence')).toBeTruthy();
     expect(screen.getByText('amount mismatch')).toBeTruthy();
     await waitFor(() => expect(changed).toHaveBeenCalledWith(updated));
+    expect(screen.getByText('Reviewed')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Select OT-9' }));
     expect(screen.getByText('Broker evidence is not available for this Result.')).toBeTruthy();
   });
@@ -110,7 +111,7 @@ describe('Results workspace table', () => {
     const select = screen.getByRole('button', { name: 'Select BRK-8' });
     fireEvent.click(select);
     expect((await screen.findByRole('alert')).textContent).toContain('Review could not be saved: Please retry.');
-    expect(select.getAttribute('aria-pressed')).toBe('true');
+    expect(select.getAttribute('aria-pressed')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Retry review' }));
     await waitFor(() => expect(retry).toHaveBeenCalledTimes(2));
     const open = screen.getByRole('button', { name: 'Open inspector' });
@@ -118,5 +119,43 @@ describe('Results workspace table', () => {
     expect(document.activeElement?.textContent).toContain('Result detail');
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(document.activeElement).toBe(open));
+  });
+
+  it('guards repeated activation, keeps late failures with their initiating result, and respects non-retryable typed failures', async () => {
+    let rejectFirst!: (reason?: unknown) => void;
+    let resolveSecond!: (value: any) => void;
+    const first = new Promise<never>((_resolve, reject) => { rejectFirst = reject; });
+    const second = new Promise<any>((resolve) => { resolveSecond = resolve; });
+    const extra = { id: 'unmatched-2', status: 'unmatched' as const, reason: 'quantity-mismatch' as const, reviewed: false, brokerTrade: { ...brokerTrade, tradeId: 'BRK-9' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex' as const, tradeId: 'OT-10' } };
+    const reviewResult = vi.fn((_runId: string, resultId: string) => resultId === 'unmatched' ? first : second);
+    window.reconciliation = { runs: { reviewResult } } as never;
+    render(<Results workspace={workspace([...workspace().results, extra])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-9' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Selected BRK-9' }));
+    expect(reviewResult).toHaveBeenCalledTimes(2);
+    rejectFirst(new Error('connection closed'));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    resolveSecond({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
+    expect((await screen.findByRole('alert')).textContent).toContain('This result is no longer available.');
+    expect(screen.queryByRole('button', { name: 'Retry review' })).toBeNull();
+  });
+
+  it('keeps a confirmed review visible without a workspace replacement callback and restores focus when compact layout closes', async () => {
+    const updated = workspace(workspace().results.map((result) => result.id === 'unmatched' ? { ...result, reviewed: true } : result));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: updated } })) } } as never;
+    const media = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => media) });
+    render(<Results workspace={workspace()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    expect(await screen.findByText('Reviewed')).toBeTruthy();
+    const open = screen.getByRole('button', { name: 'Open inspector' });
+    fireEvent.click(open);
+    const listener = media.addEventListener.mock.calls.find(([event]) => event === 'change')?.[1] as (() => void);
+    media.matches = false;
+    listener();
+    await waitFor(() => expect(document.activeElement).toBe(open));
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
   });
 });

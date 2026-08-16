@@ -2,7 +2,7 @@
 title: 'Inspect and Review Unmatched Results'
 type: 'feature'
 created: '2026-08-15'
-status: 'in-review'
+status: 'done'
 baseline_commit: '8d8767ddab7e2c98975e075b79fe6b10b536a5fb'
 review_loop_iteration: 0
 context:
@@ -77,3 +77,32 @@ Use the existing pairing components (`isin`, `buySell`, `currency`, `settlementD
 - `npm run lint` -- expected: TypeScript/lint checks pass.
 - `npm test` -- expected: contract, persistence, IPC, renderer, accessibility, and idempotency tests pass.
 - `npm run test:e2e` -- expected: packaged Electron selection, review persistence, and keyboard inspector flow pass.
+
+## Suggested Review Order
+
+**Secure review boundary**
+
+- Validate, authorize, and normalize review mutations at the only renderer-to-main entry point.
+  [`reconciliation.ts:40`](../../src/main/ipc/reconciliation.ts#L40)
+
+- Keep review eligibility and returned workspace inside the Runs application API.
+  [`runs-service.ts:39`](../../src/main/modules/runs/runs-service.ts#L39)
+
+**Durable authoritative state**
+
+- Update and hydrate the reviewed Result in one transaction for truthful outcomes.
+  [`database.ts:128`](../../src/main/adapters/sqlite/database.ts#L128)
+
+- Introduce backward-compatible review storage with an operational lookup index.
+  [`004-result-review.sql:1`](../../migrations/004-result-review.sql#L1)
+
+**Investigation workflow**
+
+- Preserve selection while coordinating review commands, inspector focus, and authoritative workspace replacement.
+  [`Results.tsx:114`](../../src/renderer/features/results/Results.tsx#L114)
+
+- Verify persistent review state, migration backfill, and rerun isolation.
+  [`reconciliation-runs.test.ts:119`](../../tests/integration/reconciliation-runs.test.ts#L119)
+
+- Exercise review failures, stale interactions, and compact inspector keyboard recovery.
+  [`results.test.tsx:107`](../../tests/unit/results.test.tsx#L107)

@@ -46,7 +46,7 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       if (!command.reviewUnmatchedResult) throw new Error('Result review is unavailable.');
       return ResultReviewResultSchema.parse({ ok: true, data: { workspace: command.reviewUnmatchedResult(request.data.runId, request.data.resultId) } });
     } catch (error) {
-      if (error instanceof ResultNotFoundError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: true } });
+      if (error instanceof ResultNotFoundError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
       if (error instanceof ResultNotEligibleError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only unmatched results can be reviewed.', retryable: false, field: 'resultId' } });
       return ResultReviewResultSchema.parse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The result review could not be saved. Please retry.', retryable: true } });
     }

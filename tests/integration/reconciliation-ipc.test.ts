@@ -3,6 +3,7 @@ import { registerReconciliationHandlers } from '../../src/main/ipc/reconciliatio
 import { isTrustedRendererSender } from '../../src/main/ipc/dashboard.js';
 import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconciliation.js';
 import { ReconciliationChannels } from '../../src/shared/contracts/reconciliation.js';
+import { ResultNotEligibleError, ResultNotFoundError } from '../../src/main/modules/runs/runs-service.js';
 
 describe('reconciliation IPC boundary', () => {
   it('validates sender and payload, returns safe typed failures, and emits parsed progress', async () => {
@@ -62,5 +63,18 @@ describe('reconciliation IPC boundary', () => {
     registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, { run: () => workspace, reviewUnmatchedResult: () => { throw new Error('sqlite private detail'); } }, () => true);
     expect(await handlers.get(ReconciliationChannels.reviewResult)?.(event, { version: 1, runId: workspace.runId, resultId: 'logical-result' })).toEqual({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The result review could not be saved. Please retry.', retryable: true } });
     expect(ReconciliationChannels.reviewResult).toBe('result.review.v1');
+  });
+
+  it('rejects untrusted review callers and maps missing or ineligible result reviews without a retry', async () => {
+    const handlers = new Map<string, (event: any, payload: unknown) => any>();
+    const runId = '11111111-1111-4111-8111-111111111111';
+    const register = (reviewUnmatchedResult: () => never) => registerReconciliationHandlers({ handle: vi.fn((channel, handler) => { handlers.set(channel, handler); }) }, { run: () => { throw new Error('unused'); }, reviewUnmatchedResult }, () => true);
+    register(() => { throw new ResultNotFoundError(); });
+    const handler = handlers.get(ReconciliationChannels.reviewResult)!;
+    expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'missing' })).toEqual({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
+    register(() => { throw new ResultNotEligibleError(); });
+    expect(await handlers.get(ReconciliationChannels.reviewResult)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only unmatched results can be reviewed.', retryable: false, field: 'resultId' } });
+    registerReconciliationHandlers({ handle: vi.fn((channel, next) => { handlers.set(channel, next); }) }, { run: () => { throw new Error('unused'); }, reviewUnmatchedResult: () => { throw new Error('must not execute'); } }, () => false);
+    expect(await handlers.get(ReconciliationChannels.reviewResult)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'blocked' })).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST', retryable: false } });
   });
 });

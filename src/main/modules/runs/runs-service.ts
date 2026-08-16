@@ -37,12 +37,10 @@ export class RunsService {
   workspaceForRun(runId: string): ReconciliationWorkspace | null { return this.database.workspaceForRun(runId, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
 
   reviewUnmatchedResult(runId: string, resultId: string): ReconciliationWorkspace {
-    const outcome = this.database.reviewUnmatchedResult(runId, resultId);
+    const outcome = this.database.reviewUnmatchedResult(runId, resultId, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds);
     if (outcome === 'not-found') throw new ResultNotFoundError();
     if (outcome === 'not-eligible') throw new ResultNotEligibleError();
-    const workspace = this.workspaceForRun(runId);
-    if (!workspace) throw new ResultNotFoundError();
-    return workspace;
+    return outcome;
   }
 
   run(asOfDate: string, report?: ProgressReporter): ReconciliationWorkspace {
