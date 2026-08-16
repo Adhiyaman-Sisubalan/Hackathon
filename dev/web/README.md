@@ -36,11 +36,18 @@ To clear preview state, run `localStorage.clear()` in the browser console.
 the container (**Dev Containers: Rebuild Container**), then:
 
 ```bash
-npm start
+npm run start:codespace
 ```
 
 Open the forwarded port **6080** to watch the window (password `vscode`). This is the only
 option that exercises SQLite and real workbook output.
+
+Use `start:codespace` rather than `start`: it adds `--no-sandbox`, because Chromium's SUID
+sandbox helper needs privileges a Codespaces container does not grant. Plain `npm start`
+is still the right command on a normal desktop.
+
+The desktop starts with the container. If port 6080 shows nothing, start it by hand with
+`sudo /usr/local/share/desktop-init.sh`.
 
 If you would rather not rebuild the container, install the libraries into the running one:
 

@@ -1,6 +1,8 @@
 {
   "name": "Reconciliation desktop",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-24-bookworm",
+  // Node 24 is only published without the "1-" family prefix (1-* stops at Node 22),
+  // and package.json pins Node 24 because the tests use node:sqlite.
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",
   "features": {
     // Serves a desktop over noVNC on port 6080 so the Electron window is viewable in a browser tab.
     "ghcr.io/devcontainers/features/desktop-lite:1": {

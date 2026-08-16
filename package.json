@@ -10,6 +10,7 @@
   "scripts": {
     "start": "electron-forge start",
     "dev:web": "vite --config vite.web.config.ts",
+    "start:codespace": "electron-forge start -- --no-sandbox",
     "lint": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run tests/unit tests/integration",
     "test:e2e": "npm run package && tsx tests/e2e/electron.acceptance.ts",
