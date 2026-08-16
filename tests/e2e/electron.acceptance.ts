@@ -112,7 +112,7 @@ async function runAcceptance(): Promise<void> {
     await historicalRun.focus();
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Results' }).waitFor();
-    await page.getByText('1 / 2', { exact: true }).waitFor();
+    await page.getByText('2 / 2', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Select BRK-202' }).click();
     assert.equal(await page.getByRole('textbox', { name: 'Comment' }).inputValue(), 'Awaiting broker confirmation.');
 

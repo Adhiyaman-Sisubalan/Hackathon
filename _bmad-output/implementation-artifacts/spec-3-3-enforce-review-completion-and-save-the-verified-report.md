@@ -110,3 +110,37 @@ The review count shown by the renderer is an affordance, not a permission bounda
 
 - Packages the dedicated worker alongside Electron main and preload bundles.
   [`forge.config.ts:9`](../../forge.config.ts#L9)
+
+## Suggested Review Order
+
+**Authoritative report publication**
+
+- Starts from a fresh gated snapshot and atomically publishes only validated output.
+  [`runs-service.ts:69`](../../src/main/modules/runs/runs-service.ts#L69)
+
+- Derives eligibility and immutable report truth within one SQLite transaction.
+  [`database.ts:179`](../../src/main/adapters/sqlite/database.ts#L179)
+
+**Workbook isolation and validation**
+
+- Builds and reopens the five-sheet workbook without blocking Electron main.
+  [`report-worker.ts:10`](../../src/main/workers/report-worker.ts#L10)
+
+- Compares every reopened report row against the authoritative snapshot.
+  [`report-worker.ts:61`](../../src/main/workers/report-worker.ts#L61)
+
+**Secure operator command**
+
+- Restricts the report action to a validated sender and identity-only request.
+  [`reconciliation.ts:86`](../../src/main/ipc/reconciliation.ts#L86)
+
+- Applies main-authoritative outstanding-review feedback without resetting investigation context.
+  [`Results.tsx:321`](../../src/renderer/features/results/Results.tsx#L321)
+
+**Verification and packaging**
+
+- Proves later-row evidence corruption cannot pass report validation.
+  [`report-worker.test.ts:31`](../../tests/unit/report-worker.test.ts#L31)
+
+- Exercises save, reopen, collision-safe publication, and Run reopening end to end.
+  [`electron.acceptance.ts:82`](../../tests/e2e/electron.acceptance.ts#L82)

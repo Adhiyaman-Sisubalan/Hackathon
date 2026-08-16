@@ -76,6 +76,11 @@ function decimalSort(rowA: { getValue: <T>(columnId: string) => T }, rowB: { get
 
 function valueOrDash(value: string | undefined): string { return value ?? '—'; }
 
+function outstandingReviewsFromReportError(message: string): number | undefined {
+  const match = /^(\d+)\s+unmatched\b/.exec(message);
+  return match ? Number(match[1]) : undefined;
+}
+
 function formatDecimal(value: string | undefined): string {
   if (!value) return '—';
   const normalized = normalizeDecimal(value);
@@ -136,6 +141,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const [savingReport, setSavingReport] = useState(false);
   const [reportError, setReportError] = useState<ReportError>();
   const [reportDestination, setReportDestination] = useState<string>();
+  const [authoritativeOutstandingReviews, setAuthoritativeOutstandingReviews] = useState<number>();
   const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -171,7 +177,8 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
-  const outstandingReviews = workspace.reviewProgress.totalUnmatched - workspace.reviewProgress.reviewedUnmatched;
+  const localOutstandingReviews = workspace.reviewProgress.totalUnmatched - workspace.reviewProgress.reviewedUnmatched;
+  const outstandingReviews = authoritativeOutstandingReviews ?? localOutstandingReviews;
   const hasActiveFilters = selected.length !== reconciliationStatuses.length;
 
   useEffect(() => {
@@ -181,6 +188,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       setSavingReport(false);
       setReportError(undefined);
       setReportDestination(undefined);
+      setAuthoritativeOutstandingReviews(undefined);
     }
   }, [workspace.runId]);
 
@@ -324,7 +332,13 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       const response = await enqueueWorkspaceMutation(workspaceMutationQueue, () => window.reconciliation!.runs.saveReport(runId));
       if (reportOperationRef.current !== operation || reportWorkspaceRunIdRef.current !== runId) return;
       if (response.ok) setReportDestination(response.data.destination);
-      else setReportError({ message: response.error.message, retryable: response.error.retryable });
+      else {
+        if (response.error.code === 'REPORT_INELIGIBLE') {
+          const authoritativeOutstanding = outstandingReviewsFromReportError(response.error.message);
+          if (authoritativeOutstanding !== undefined) setAuthoritativeOutstandingReviews(authoritativeOutstanding);
+        }
+        setReportError({ message: response.error.message, retryable: response.error.retryable });
+      }
     } catch {
       if (reportOperationRef.current === operation && reportWorkspaceRunIdRef.current === runId) setReportError({ message: 'The verified report could not be saved. Please retry.', retryable: true });
     } finally {

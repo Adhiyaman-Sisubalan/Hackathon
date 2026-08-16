@@ -329,6 +329,22 @@ describe('Results workspace table', () => {
     expect(await screen.findByText(/Verified report saved to \/mock-output\/reconciliation\.xlsx/)).toBeTruthy();
   });
 
+  it('uses the main-authoritative review gate after a stale eligible report request', async () => {
+    const eligible = workspace(workspace().results.map((result) => result.status === 'unmatched' ? { ...result, reviewed: true } : result));
+    const saveReport = vi.fn(async () => ({ ok: false as const, error: { code: 'REPORT_INELIGIBLE' as const, message: '2 unmatched results remain to review before saving the verified report.', retryable: false } }));
+    window.reconciliation = { runs: { saveReport } } as never;
+    render(<Results workspace={eligible} />);
+
+    const save = screen.getByRole('button', { name: 'Save verified report' });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(save);
+
+    expect((await screen.findByRole('alert')).textContent).toContain('2 unmatched results remain');
+    expect(screen.getByText('2 unmatched reviews remain.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Save verified report' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Retry saving report' })).toBeNull();
+  });
+
   it('clears report feedback only when the displayed Run changes', async () => {
     const eligible = workspace(workspace().results.map((result) => result.status === 'unmatched' ? { ...result, reviewed: true } : result));
     const saveReport = vi.fn(async () => ({ ok: true as const, data: { destination: '/mock-output/first.xlsx' } }));
