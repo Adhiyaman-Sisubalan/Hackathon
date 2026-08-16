@@ -1,5 +1,5 @@
 import { createColumnHelper, columnFilteringFeature, columnVisibilityFeature, constructFilterFn, createFilteredRowModel, createSortedRowModel, rowSortingFeature, tableFeatures, useTable } from '@tanstack/react-table';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { compareNormalizedDecimals, normalizeDecimal } from '../../../domain/decimal.js';
 import { reconciliationStatuses, type ReconciliationStatus } from '../../../domain/reconciliation/reconciliation.js';
 import type { ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
@@ -110,15 +110,20 @@ function rowFor(result: ReconciliationResult): ResultRow {
   };
 }
 
-export function Results({ workspace, initialSelected = reconciliationStatuses, loadError, onRetry }: {
+export function Results({ workspace, initialSelected = reconciliationStatuses, loadError, onRetry, onWorkspaceChanged }: {
   workspace: ReconciliationWorkspace;
   initialSelected?: readonly ReconciliationStatus[];
   loadError?: string | null;
   onRetry?: () => void;
+  onWorkspaceChanged?: (workspace: ReconciliationWorkspace) => void;
 }) {
   const [selected, setSelected] = useState<readonly ReconciliationStatus[]>(initialSelected);
   const [selectedResultId, setSelectedResultId] = useState<string>();
+  const [reviewError, setReviewError] = useState<string>();
+  const [compactInspectorOpen, setCompactInspectorOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const inspectorHeadingRef = useRef<HTMLHeadingElement>(null);
+  const inspectorInvokerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { headingRef.current?.focus(); }, []);
   const data = useMemo(() => workspace.results.map(rowFor), [workspace.results]);
   const table = useTable({
@@ -131,10 +136,40 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
     enableMultiSort: false
   });
   const visibleRows = table.getRowModel().rows;
+  const selectedResult = workspace.results.find((result) => result.id === selectedResultId);
   const toggle = (status: ReconciliationStatus) => setSelected((current) => current.includes(status) ? current.filter((value) => value !== status) : [...current, status]);
   const clearFilters = () => setSelected(reconciliationStatuses);
   const isAllResolved = workspace.metrics.unresolved === 0;
   const hasActiveFilters = selected.length !== reconciliationStatuses.length;
+
+  const review = async (result: ReconciliationResult) => {
+    if (result.status !== 'unmatched' || result.reviewed) return;
+    setReviewError(undefined);
+    if (!window.reconciliation) { setReviewError('Result review is unavailable. Please retry.'); return; }
+    const response = await window.reconciliation.runs.reviewResult(workspace.runId, result.id);
+    if (response.ok) {
+      onWorkspaceChanged?.(response.data.workspace);
+      return;
+    }
+    setReviewError(response.error.message);
+  };
+  const selectResult = (result: ReconciliationResult) => {
+    setSelectedResultId(result.id);
+    setReviewError(undefined);
+    void review(result);
+  };
+  const closeInspector = () => {
+    setCompactInspectorOpen(false);
+    requestAnimationFrame(() => inspectorInvokerRef.current?.focus());
+  };
+  useEffect(() => {
+    if (compactInspectorOpen) inspectorHeadingRef.current?.focus();
+  }, [compactInspectorOpen]);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && compactInspectorOpen) { event.preventDefault(); closeInspector(); } };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [compactInspectorOpen]);
 
   return <section aria-labelledby="results-title" className={styles.results}>
     <p className={styles.eyebrow}>Completed reconciliation</p><h1 ref={headingRef} id="results-title" tabIndex={-1}>Results</h1>
@@ -152,8 +187,9 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
       {visibleRows.length === 0 && <div className={styles.empty}><p>No matching records.</p>{hasActiveFilters && <button type="button" onClick={clearFilters}>Clear filters</button>}</div>}
     </div>
     <p className={styles.sourceNote}>Source values use Broker when present; otherwise OT/MUREX values are shown.</p>
-    <div className={styles.tableWrap}>
-      <table className={styles.table}>
+    <div className={styles.workspace}>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
         <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => {
           const sorted = header.column.getIsSorted();
           const canSort = header.column.getCanSort();
@@ -162,9 +198,50 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
           </th>;
         })}</tr>)}</thead>
         <tbody>{visibleRows.map((row) => <tr key={row.id} className={styles.row} data-selected={selectedResultId === row.id} aria-selected={selectedResultId === row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id} className={cell.column.columnDef.meta?.numeric ? styles.numeric : cell.column.columnDef.meta?.date ? styles.date : undefined}>
-          {cell.column.id === 'counterparty' ? <button type="button" className={styles.select} aria-label={`Select ${row.original.tradeId ?? 'reconciliation record'}`} onClick={() => setSelectedResultId(row.id)}>{row.getValue<string>('counterparty')}</button> : <table.FlexRender cell={cell} />}
+          {cell.column.id === 'counterparty' ? <button type="button" className={styles.select} aria-label={`Select ${row.original.tradeId ?? 'reconciliation record'}`} aria-pressed={selectedResultId === row.id} aria-describedby={reviewError && selectedResultId === row.id ? 'review-error' : undefined} onClick={() => selectResult(row.original.result)}>{row.getValue<string>('counterparty')}</button> : <table.FlexRender cell={cell} />}
         </td>)}</tr>)}</tbody>
-      </table>
+        </table>
+      </div>
+      <button ref={inspectorInvokerRef} type="button" className={styles.openInspector} onClick={() => setCompactInspectorOpen(true)} disabled={!selectedResult}>Open inspector</button>
+      <DetailPanel result={selectedResult} reviewError={reviewError} onRetry={() => selectedResult && void review(selectedResult)} className={styles.detailPanel} />
+      {compactInspectorOpen && <aside className={styles.compactInspector} aria-labelledby="inspector-title">
+        <button type="button" className={styles.closeInspector} onClick={closeInspector}>Close inspector</button>
+        <DetailPanel result={selectedResult} reviewError={reviewError} onRetry={() => selectedResult && void review(selectedResult)} headingRef={inspectorHeadingRef} compact />
+      </aside>}
     </div>
   </section>;
+}
+
+function DetailPanel({ result, reviewError, onRetry, className, compact, headingRef }: {
+  result: ReconciliationResult | undefined;
+  reviewError?: string;
+  onRetry: () => void;
+  className?: string;
+  compact?: boolean;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
+}) {
+  const source = result?.brokerTrade ?? result?.otMurexTrade;
+  const key = source ? `${source.isin} · ${source.buySell === 'buy' ? 'Buy' : 'Sell'} · ${source.currency} · ${formatDate(source.settlementDate)}` : 'Unavailable';
+  return <aside className={className} aria-label="Result detail">
+    <h2 ref={headingRef} id={compact ? 'inspector-title' : undefined} tabIndex={compact ? -1 : undefined}>Result detail</h2>
+    {!result && <p>Select a Result to inspect its evidence.</p>}
+    {result && <>
+      <dl className={styles.detailSummary}>
+        <div><dt>Reconciliation key</dt><dd>{key}</dd></div>
+        <div><dt>Status</dt><dd><ReconciliationStatusText status={result.status} /></dd></div>
+        <div><dt>Reason</dt><dd>{result.reason?.replaceAll('-', ' ') ?? '—'}</dd></div>
+        {result.status === 'unmatched' && <div><dt>Review</dt><dd>{result.reviewed ? 'Reviewed' : 'Saving review…'}</dd></div>}
+      </dl>
+      {reviewError && <div id="review-error" className={styles.error} role="alert"><p>Review could not be saved: {reviewError}</p><button type="button" onClick={onRetry}>Retry review</button></div>}
+      <Evidence title="Broker evidence" trade={result.brokerTrade} missing="Broker evidence is not available for this Result." />
+      <Evidence title="OT/MUREX evidence" trade={result.otMurexTrade} missing="OT/MUREX evidence is not available for this Result." />
+    </>}
+  </aside>;
+}
+
+function Evidence({ title, trade, missing }: { title: string; trade: ReconciliationResult['brokerTrade']; missing: string }) {
+  return <section className={styles.evidence}><h3>{title}</h3>{!trade ? <p>{missing}</p> : <dl>
+    <div><dt>Trade ID</dt><dd>{trade.tradeId}</dd></div><div><dt>ISIN</dt><dd>{trade.isin}</dd></div><div><dt>Buy / sell</dt><dd>{trade.buySell}</dd></div><div><dt>Currency</dt><dd>{trade.currency}</dd></div>
+    <div><dt>Settlement date</dt><dd>{formatDate(trade.settlementDate)}</dd></div><div><dt>Amount</dt><dd>{formatDecimal(trade.amount)}</dd></div><div><dt>Quantity</dt><dd>{formatDecimal(trade.quantity)}</dd></div><div><dt>Price</dt><dd>{formatDecimal(trade.price)}</dd></div>
+  </dl>}</section>;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Results } from '../../src/renderer/features/results/Results.js';
 import type { ReconciliationWorkspace } from '../../src/shared/contracts/reconciliation.js';
 
@@ -10,13 +10,13 @@ const brokerTrade = { source: 'broker' as const, tradeId: 'BRK-7', isin: 'US0000
 const otTrade = { source: 'ot-murex' as const, tradeId: 'OT-9', isin: 'GB0000000002', buySell: 'sell' as const, currency: 'GBP', settlementDate: '2026-08-16', amount: '9.25', quantity: '2', price: '4.625' };
 
 function workspace(results: ReconciliationWorkspace['results'] = [
-  { id: 'matched', status: 'matched', reason: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
-  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
-  { id: 'missing-broker', status: 'missing-from-broker', reason: null, brokerTrade: null, otMurexTrade: otTrade },
-  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, brokerTrade, otMurexTrade: null }
+  { id: 'matched', status: 'matched', reason: null, reviewed: false, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } },
+  { id: 'unmatched', status: 'unmatched', reason: 'amount-mismatch', reviewed: false, brokerTrade: { ...brokerTrade, tradeId: 'BRK-8', amount: '10.1' }, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-8', amount: '10.2' } },
+  { id: 'missing-broker', status: 'missing-from-broker', reason: null, reviewed: false, brokerTrade: null, otMurexTrade: otTrade },
+  { id: 'missing-ot', status: 'missing-from-ot-murex', reason: null, reviewed: false, brokerTrade, otMurexTrade: null }
 ]): ReconciliationWorkspace {
   const matched = results.filter((result) => result.status === 'matched').length;
-  return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: results.length, matched, unresolved: results.length - matched, reconciliationRate: matched / results.length, unresolvedRate: (results.length - matched) / results.length }, anomaly: { kind: 'warning', currentUnresolvedRate: .75, historyCount: 5, baselineUnresolvedRate: .1 }, results };
+  return { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: results.length, matched, unresolved: results.length - matched, reconciliationRate: matched / results.length, unresolvedRate: (results.length - matched) / results.length }, anomaly: { kind: 'warning', currentUnresolvedRate: .75, historyCount: 5, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: results.filter((result) => result.status === 'unmatched' && result.reviewed).length, totalUnmatched: results.filter((result) => result.status === 'unmatched').length }, results };
 }
 
 describe('Results workspace table', () => {
@@ -57,7 +57,7 @@ describe('Results workspace table', () => {
 
   it('retains summary and controls for an all-resolved run', () => {
     render(<Results initialSelected={['unmatched', 'missing-from-broker', 'missing-from-ot-murex']} workspace={workspace([
-      { id: 'one', status: 'matched', reason: null, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
+      { id: 'one', status: 'matched', reason: null, reviewed: false, brokerTrade, otMurexTrade: { ...brokerTrade, source: 'ot-murex', tradeId: 'OT-7' } }
     ])} />);
     expect((screen.getByLabelText('Matched') as HTMLInputElement).checked).toBe(false);
     expect(screen.getByText('Showing 0 results. All results resolved.')).toBeTruthy();
@@ -79,11 +79,44 @@ describe('Results workspace table', () => {
   it('keeps table feedback available for a 1,000-result fixture without virtualization', () => {
     const results = Array.from({ length: 1000 }, (_, index) => ({
       id: `result-${index}`, status: index % 2 === 0 ? 'matched' as const : 'unmatched' as const,
-      reason: index % 2 === 0 ? null : 'amount-mismatch' as const,
+      reason: index % 2 === 0 ? null : 'amount-mismatch' as const, reviewed: false,
       brokerTrade: { ...brokerTrade, tradeId: `BRK-${index}`, amount: String(index + 1) }, otMurexTrade: null
     }));
     render(<Results workspace={workspace(results)} initialSelected={[]} />);
     expect(screen.getByText('Showing 0 results.')).toBeTruthy();
     expect(screen.getByText('1000 total results.')).toBeTruthy();
+  });
+
+  it('inspects paired and missing-side evidence and replaces review state only after main confirms it', async () => {
+    const initial = workspace();
+    const updated = workspace(initial.results.map((result) => result.id === 'unmatched' ? { ...result, reviewed: true } : result));
+    window.reconciliation = { runs: { reviewResult: vi.fn(async () => ({ ok: true as const, data: { workspace: updated } })) } } as never;
+    const changed = vi.fn();
+    render(<Results workspace={initial} onWorkspaceChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select BRK-8' }));
+    expect(screen.getByText('Reconciliation key')).toBeTruthy();
+    expect(screen.getByText('Broker evidence')).toBeTruthy();
+    expect(screen.getByText('OT/MUREX evidence')).toBeTruthy();
+    expect(screen.getByText('amount mismatch')).toBeTruthy();
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(updated));
+    fireEvent.click(screen.getByRole('button', { name: 'Select OT-9' }));
+    expect(screen.getByText('Broker evidence is not available for this Result.')).toBeTruthy();
+  });
+
+  it('keeps selection and investigation context through a retryable review failure and restores compact inspector focus', async () => {
+    const retry = vi.fn(async () => ({ ok: false as const, error: { code: 'PERSISTENCE_FAILED' as const, message: 'Please retry.', retryable: true } }));
+    window.reconciliation = { runs: { reviewResult: retry } } as never;
+    render(<Results workspace={workspace()} />);
+    const select = screen.getByRole('button', { name: 'Select BRK-8' });
+    fireEvent.click(select);
+    expect((await screen.findByRole('alert')).textContent).toContain('Review could not be saved: Please retry.');
+    expect(select.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry review' }));
+    await waitFor(() => expect(retry).toHaveBeenCalledTimes(2));
+    const open = screen.getByRole('button', { name: 'Open inspector' });
+    fireEvent.click(open);
+    expect(document.activeElement?.textContent).toContain('Result detail');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(open));
   });
 });

@@ -12,7 +12,7 @@ import { Dashboard } from '../../src/renderer/features/dashboard/Dashboard.js';
 import { Results } from '../../src/renderer/features/results/Results.js';
 
 const temporaryDirectories: string[] = [];
-const migrations = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql'].map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
+const migrations = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql'].map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 
 afterEach(() => { cleanup(); for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
@@ -27,7 +27,7 @@ describe('SQLite dashboard foundation', () => {
     const firstRuns = new RunsService(first, fixture);
     firstRuns.migrate(migrations);
     firstRuns.seed();
-    expect(first.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 });
+    expect(first.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 });
     expect(first.db.prepare('SELECT version FROM seed_versions').all()).toEqual([{ version: 'initial-v1' }]);
     first.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
       VALUES (?, 'completed', ?, '2026-08-15', ?, ?, ?, ?, ?), (?, 'completed', ?, '2026-08-15', ?, ?, ?, ?, ?)`)

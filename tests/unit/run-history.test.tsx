@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 const latest = { runId: '22222222-2222-4222-8222-222222222222', asOfDate: '2026-08-15', completedAt: '2026-08-15T12:00:00.000Z', metrics: { total: 2, matched: 1, unresolved: 1, reconciliationRate: .5, unresolvedRate: .5 }, anomaly: { kind: 'warning' as const, currentUnresolvedRate: .5, historyCount: 5 as const, baselineUnresolvedRate: .1 } };
 const older = { ...latest, runId: '11111111-1111-4111-8111-111111111111', completedAt: '2026-08-14T12:00:00.000Z' };
-const workspace = { ...latest, results: [] };
+const workspace = { ...latest, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 0 }, results: [] };
 
 describe('run history destinations', () => {
   it('shows newest-first history and opens the persisted snapshot through a keyboard-reachable button', async () => {

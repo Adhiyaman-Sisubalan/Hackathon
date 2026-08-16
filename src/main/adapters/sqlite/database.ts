@@ -17,6 +17,8 @@ export interface SeededRunHistory {
   readonly unresolvedRate: number;
 }
 
+export type ResultReviewOutcome = 'reviewed' | 'not-found' | 'not-eligible';
+
 export class SqliteDatabase {
   readonly db: DatabaseSync;
 
@@ -56,7 +58,7 @@ export class SqliteDatabase {
     }
   }
 
-  persistRun(workspace: Omit<ReconciliationWorkspace, 'anomaly'>): void {
+  persistRun(workspace: Omit<ReconciliationWorkspace, 'anomaly' | 'reviewProgress'>): void {
     this.transaction(() => {
       const metrics = workspace.metrics;
       this.db.prepare(`INSERT INTO runs (id, status, completed_at, as_of_date, total, matched, unresolved, reconciliation_rate, unresolved_rate)
@@ -123,7 +125,7 @@ export class SqliteDatabase {
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE id = ? AND status = 'completed'`).get(runId) as unknown as RunSummaryRow | undefined;
     if (!run) return null;
-    const rows = this.db.prepare(`SELECT result_rowid, status, reason,
+    const rows = this.db.prepare(`SELECT result_rowid, status, reason, reviewed,
       broker.trade_id AS brokerTradeId, broker.isin AS brokerIsin, broker.buy_sell AS brokerBuySell, broker.currency AS brokerCurrency,
       broker.settlement_date AS brokerSettlementDate, broker.amount AS brokerAmount, broker.quantity AS brokerQuantity, broker.price AS brokerPrice,
       ot_murex.trade_id AS otMurexTradeId, ot_murex.isin AS otMurexIsin, ot_murex.buy_sell AS otMurexBuySell, ot_murex.currency AS otMurexCurrency,
@@ -137,9 +139,22 @@ export class SqliteDatabase {
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
-        return { id: JSON.stringify([brokerTrade?.tradeId ?? null, otMurexTrade?.tradeId ?? null]), status: row.status, reason: row.reason, brokerTrade, otMurexTrade };
-      })
+        return { id: JSON.stringify([brokerTrade?.tradeId ?? null, otMurexTrade?.tradeId ?? null]), status: row.status, reason: row.reason, reviewed: Boolean(row.reviewed), brokerTrade, otMurexTrade };
+      }),
+      reviewProgress: this.reviewProgressForRun(runId)
     });
+  }
+
+  reviewUnmatchedResult(runId: string, resultId: string): ResultReviewOutcome {
+    let outcome: ResultReviewOutcome = 'not-found';
+    this.transaction(() => {
+      const row = this.db.prepare('SELECT status FROM reconciliation_results WHERE id = ? AND run_id = ?').get(`${runId}:${resultId}`, runId) as { status: string } | undefined;
+      if (!row) { outcome = 'not-found'; return; }
+      if (row.status !== 'unmatched') { outcome = 'not-eligible'; return; }
+      this.db.prepare("UPDATE reconciliation_results SET reviewed = 1 WHERE id = ? AND run_id = ? AND status = 'unmatched'").run(`${runId}:${resultId}`, runId);
+      outcome = 'reviewed';
+    });
+    return outcome;
   }
 
   close(): void { this.db.close(); }
@@ -158,11 +173,20 @@ export class SqliteDatabase {
     const metrics = { total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate, unresolvedRate: row.unresolvedRate };
     return ReconciliationRunSummarySchema.parse({ ...row, metrics, anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds) });
   }
+
+  private reviewProgressForRun(runId: string): { reviewedUnmatched: number; totalUnmatched: number } {
+    const row = this.db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN status = 'unmatched' AND reviewed = 1 THEN 1 ELSE 0 END), 0) AS reviewedUnmatched,
+      COALESCE(SUM(CASE WHEN status = 'unmatched' THEN 1 ELSE 0 END), 0) AS totalUnmatched
+      FROM reconciliation_results WHERE run_id = ?`).get(runId) as { reviewedUnmatched: number; totalUnmatched: number };
+    return row;
+  }
 }
 
 interface HydratedResultRow {
   readonly status: 'matched' | 'unmatched' | 'missing-from-broker' | 'missing-from-ot-murex';
   readonly reason: 'amount-mismatch' | 'quantity-mismatch' | 'amount-and-quantity-mismatch' | null;
+  readonly reviewed: number;
   readonly brokerTradeId: string | null; readonly brokerIsin: string | null; readonly brokerBuySell: 'buy' | 'sell' | null; readonly brokerCurrency: string | null;
   readonly brokerSettlementDate: string | null; readonly brokerAmount: string | null; readonly brokerQuantity: string | null; readonly brokerPrice: string | null;
   readonly otMurexTradeId: string | null; readonly otMurexIsin: string | null; readonly otMurexBuySell: 'buy' | 'sell' | null; readonly otMurexCurrency: string | null;

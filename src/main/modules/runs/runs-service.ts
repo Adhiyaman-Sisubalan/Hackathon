@@ -13,6 +13,8 @@ export type ProgressReporter = (progress: { runId?: string; asOfDate: string; ph
 
 export class RunInProgressError extends Error { readonly code = 'RUN_IN_PROGRESS'; constructor() { super('A reconciliation is already running.'); } }
 export class UnsupportedDateError extends Error { readonly code = 'UNAVAILABLE'; constructor() { super('No seeded data for this date.'); } }
+export class ResultNotFoundError extends Error { readonly code = 'RESULT_NOT_FOUND'; constructor() { super('This result is no longer available.'); } }
+export class ResultNotEligibleError extends Error { readonly code = 'INVALID_REQUEST'; constructor() { super('Only unmatched results can be reviewed.'); } }
 
 export class RunsService {
   private active = false;
@@ -33,6 +35,15 @@ export class RunsService {
   listCompletedRuns(): readonly ReconciliationRunSummary[] { return this.database.listCompletedRuns(this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
 
   workspaceForRun(runId: string): ReconciliationWorkspace | null { return this.database.workspaceForRun(runId, this.fixture.version, reconciliationBootstrapConfig.anomalyThresholds); }
+
+  reviewUnmatchedResult(runId: string, resultId: string): ReconciliationWorkspace {
+    const outcome = this.database.reviewUnmatchedResult(runId, resultId);
+    if (outcome === 'not-found') throw new ResultNotFoundError();
+    if (outcome === 'not-eligible') throw new ResultNotEligibleError();
+    const workspace = this.workspaceForRun(runId);
+    if (!workspace) throw new ResultNotFoundError();
+    return workspace;
+  }
 
   run(asOfDate: string, report?: ProgressReporter): ReconciliationWorkspace {
     if (this.active) throw new RunInProgressError();

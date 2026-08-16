@@ -9,7 +9,7 @@ import { DuplicateTradeIdError } from '../../src/domain/reconciliation/reconcili
 import { RunsService, UnsupportedDateError, type ScenarioRegistry } from '../../src/main/modules/runs/runs-service.js';
 
 const directories: string[] = [];
-const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql'];
+const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
@@ -74,7 +74,7 @@ describe('persisted reconciliation runs', () => {
       .run(runId, '2026-08-15T00:00:00.000Z');
     database.migrate(migrations);
     expect(database.db.prepare('SELECT id, as_of_date AS asOfDate, total, unresolved_rate AS unresolvedRate FROM runs').get()).toEqual({ id: runId, asOfDate: '2026-08-15', total: 5, unresolvedRate: .4 });
-    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 });
+    expect(database.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 });
     const runs = new RunsService(database, initialSeed);
     runs.seed();
     expect(runs.latestSummary()).toMatchObject({ runId, metrics: { total: 5, matched: 3, unresolved: 2, reconciliationRate: .6, unresolvedRate: .4 } });
@@ -113,6 +113,23 @@ describe('persisted reconciliation runs', () => {
     expect(runs.workspaceForRun(first.runId)).toEqual(first);
     expect(scenarioLookups).toBe(2);
     expect(runs.workspaceForRun('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBeNull();
+    database.close();
+  });
+
+  it('persists idempotent unmatched reviews per run without reviewing other statuses or reruns', () => {
+    const { database, runs } = setup();
+    const first = runs.run('2026-08-15');
+    const unmatched = first.results.find((result) => result.status === 'unmatched')!;
+    const missing = first.results.find((result) => result.status === 'missing-from-broker')!;
+    expect(first.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 1 });
+    const reviewed = runs.reviewUnmatchedResult(first.runId, unmatched.id);
+    expect(reviewed.results.find((result) => result.id === unmatched.id)?.reviewed).toBe(true);
+    expect(reviewed.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    expect(runs.reviewUnmatchedResult(first.runId, unmatched.id).reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    expect(() => runs.reviewUnmatchedResult(first.runId, missing.id)).toThrow('Only unmatched results can be reviewed.');
+    expect(runs.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 1 });
+    const rerun = runs.run('2026-08-15');
+    expect(rerun.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 1 });
     database.close();
   });
 

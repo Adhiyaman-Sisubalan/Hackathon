@@ -25,7 +25,7 @@ export function App() {
       {view === 'overview' && <Dashboard onCompleted={(completed) => showWorkspace(completed)} />}
       {view === 'runs' && <RunHistory destination="runs" onOpened={showWorkspace} onStale={() => setWorkspace(undefined)} onOverview={() => setView('overview')} />}
       {view === 'exceptions' && <RunHistory destination="exceptions" onOpened={showWorkspace} onStale={() => setWorkspace(undefined)} onOverview={() => setView('overview')} />}
-      {view === 'results' && workspace && <Results key={`${workspace.runId}:${resultFilters.join(',')}`} workspace={workspace} initialSelected={resultFilters} />}
+      {view === 'results' && workspace && <Results key={`${workspace.runId}:${resultFilters.join(',')}`} workspace={workspace} initialSelected={resultFilters} onWorkspaceChanged={setWorkspace} />}
     </main>
   </div>;
 }

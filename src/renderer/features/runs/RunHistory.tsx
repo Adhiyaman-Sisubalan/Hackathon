@@ -8,7 +8,7 @@ type HistoryError = { message: string; retryable: boolean };
 
 export function RunHistory({ destination, api, onOpened, onStale, onOverview }: {
   destination: Destination;
-  api?: ReconciliationApi['runs'];
+  api?: Pick<ReconciliationApi['runs'], 'list' | 'getWorkspace'>;
   onOpened: (workspace: ReconciliationWorkspace, exceptionPreset: boolean) => void;
   onStale: () => void;
   onOverview: () => void;

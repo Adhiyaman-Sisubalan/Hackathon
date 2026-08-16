@@ -1,5 +1,5 @@
 .strip { display: grid; gap: var(--space-3); }
-.metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--space-3); margin: 0; }
 .metrics div { border-left: 3px solid var(--border); padding-left: var(--space-3); }
 .metrics dt { color: var(--text-muted); font-size: .875rem; }
 .metrics dd { font-size: 1.25rem; font-weight: 700; margin: var(--space-1) 0 0; }

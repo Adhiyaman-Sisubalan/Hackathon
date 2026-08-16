@@ -1,5 +1,5 @@
 import type { DashboardGetResult } from './dashboard.js';
-import type { ReconciliationProgress, ReconciliationRunResult, RunWorkspaceGetResult, RunsListResult } from './reconciliation.js';
+import type { ReconciliationProgress, ReconciliationRunResult, ResultReviewResult, RunWorkspaceGetResult, RunsListResult } from './reconciliation.js';
 
 export interface ReconciliationApi {
   dashboard: { get(): Promise<DashboardGetResult> };
@@ -10,5 +10,6 @@ export interface ReconciliationApi {
   runs: {
     list(): Promise<RunsListResult>;
     getWorkspace(runId: string): Promise<RunWorkspaceGetResult>;
+    reviewResult(runId: string, resultId: string): Promise<ResultReviewResult>;
   };
 }
