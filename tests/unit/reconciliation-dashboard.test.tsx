@@ -33,8 +33,11 @@ describe('reconciliation dashboard form', () => {
     expect(run).toHaveBeenCalledTimes(1);
     resolve({ ok: true, data: { workspace: { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 1, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 }, anomaly: { kind: 'normal', currentUnresolvedRate: 0, historyCount: 5, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 0 }, results: [] } } });
     await waitFor(() => expect(completed).toHaveBeenCalledOnce());
-    expect(await screen.findByLabelText('Reconciliation summary')).toBeTruthy();
-    // Scoped to the metric: the composition chart shows the same rate in its centre.
-    expect(within(screen.getByText('Reconciliation rate').closest('div')!).getByText('100.0%')).toBeTruthy();
+    // Overview states the run through its charts; the metric tiles belong to Results.
+    expect(await screen.findByText('Run composition')).toBeTruthy();
+    expect(screen.queryByLabelText('Reconciliation summary')).toBeNull();
+    const composition = screen.getByText('Run composition').closest('figure')!;
+    expect(within(composition).getByText('100.0%')).toBeTruthy();
+    expect(within(composition).getByText('1 result')).toBeTruthy();
   });
 });

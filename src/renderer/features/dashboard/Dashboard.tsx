@@ -3,7 +3,7 @@ import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import type { ReconciliationRunSummary, ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import type { ReconciliationApi } from '../../../shared/contracts/preload.js';
 import { dashboardState, type DashboardError } from './dashboard-model.js';
-import { SummaryStrip } from '../../components/SummaryStrip.js';
+import { AnomalyNotice } from '../../components/AnomalyNotice.js';
 import { RunComposition } from '../../components/RunComposition.js';
 import { RunTrend } from '../../components/RunTrend.js';
 import styles from './Dashboard.module.css';
@@ -98,9 +98,13 @@ export function Dashboard({ api, reconciliationApi, runsApi, onCompleted }: Dash
     {state.kind === 'loading' && <p role="status" className={styles.loading}>Loading latest reconciliation summary…</p>}
     {state.kind === 'first-use' && <div className={styles.firstUse}><p>No reconciliation has been completed yet. Choose an as-of date and run reconciliation to create your first run.</p></div>}
     {state.kind === 'error' && <div role="alert" className={styles.error}><p>{state.message}</p>{state.retryable && <button ref={retryRef} type="button" className={styles.secondary} onClick={() => void load()}>Retry dashboard query</button>}</div>}
-    {state.kind === 'summary' && <RunComposition summary={state.summary} />}
-    {state.kind === 'summary' && <SummaryStrip summary={state.summary} />}
-    {history.length > 0 && <RunTrend runs={history} />}
+    {/* The charts state the same figures the Results tiles do, so Overview shows them
+        once, side by side, and keeps only the anomaly notice the charts do not carry. */}
+    {(state.kind === 'summary' || history.length > 0) && <div className={styles.charts}>
+      {state.kind === 'summary' && <RunComposition summary={state.summary} />}
+      {history.length > 0 && <RunTrend runs={history} />}
+    </div>}
+    {state.kind === 'summary' && <AnomalyNotice summary={state.summary} />}
     <section className={styles.runPanel} aria-labelledby="run-panel-title">
       <div className={styles.panelHead}>
         <h2 id="run-panel-title">Start a reconciliation</h2>

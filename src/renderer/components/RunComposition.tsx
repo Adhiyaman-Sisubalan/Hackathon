@@ -58,7 +58,11 @@ export function RunComposition({ summary }: { summary: ReconciliationRunSummary 
     : `${total} results: ${rows.map((row) => `${row.count} ${labels[row.status].toLowerCase()}`).join(', ')}.`;
 
   return <figure className={styles.figure}>
-    <figcaption className={styles.caption}>Run composition</figcaption>
+    <div className={styles.head}>
+      <figcaption className={styles.caption}>Run composition</figcaption>
+      {/* The run total, which no other chart on Overview states. */}
+      <p className={styles.total}>{total} {total === 1 ? 'result' : 'results'}</p>
+    </div>
     <div className={styles.body}>
       <div className={styles.chartCell}>
         <svg className={styles.donut} viewBox="0 0 100 100" role="img" aria-label={`Reconciliation run composition. ${description}`}>

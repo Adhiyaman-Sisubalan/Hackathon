@@ -13,16 +13,6 @@
 .meter { display: block; overflow: hidden; width: 100%; max-width: 6rem; height: 4px; margin-top: var(--space-2); border-radius: var(--radius-pill); background: var(--border); }
 .meter span { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); transition: inline-size var(--motion-fast); }
 
-/* The icon is absolutely placed so the message keeps ordinary inline text flow. */
-.alert, .context { position: relative; margin: 0; padding: var(--space-3) var(--space-4) var(--space-3) 2.75rem; border: 1px solid var(--border); border-radius: var(--radius-card); }
-.alert::before, .context::before { position: absolute; top: var(--space-3); left: var(--space-4); display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font-size: .75rem; font-weight: 700; }
-.alert { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
-.alert::before { content: '!'; background: var(--warning); color: var(--warning-soft); }
-.alert strong { color: var(--text); font-weight: 650; }
-.context { color: var(--text-muted); background: var(--surface); }
-.context::before { content: 'i'; background: var(--border-strong); color: var(--surface); font-style: italic; }
-
 @media (forced-colors: active) {
   .meter span { background: Highlight; }
-  .alert, .context { border-color: CanvasText; }
 }
