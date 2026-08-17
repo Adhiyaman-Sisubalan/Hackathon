@@ -13,6 +13,13 @@ const summary: ReconciliationRunSummary = {
 };
 
 describe('SummaryStrip', () => {
+  it('carries no chart, so the Results workspace shows numbers only', () => {
+    const { container } = render(<SummaryStrip summary={{ ...summary, statusCounts: { matched: 2, unmatched: 2, 'missing-from-broker': 1, 'missing-from-ot-murex': 1 } }} />);
+    expect(container.querySelector('figure')).toBeNull();
+    expect(screen.queryByText('Run composition')).toBeNull();
+    expect(screen.queryByText('Rates by as-of date')).toBeNull();
+  });
+
   it('presents persisted one-decimal metrics and an accessible, non-blocking warning', () => {
     render(<SummaryStrip summary={summary} />);
     expect(screen.getByLabelText('Reconciliation summary')).toBeTruthy();

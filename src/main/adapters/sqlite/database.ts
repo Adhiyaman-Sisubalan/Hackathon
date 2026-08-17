@@ -177,7 +177,8 @@ export class SqliteDatabase {
     const historicalRates = this.seededHistoricalRates(seedVersion);
     // One grouped read for the whole list rather than a per-run count query.
     const countsByRun = this.statusCountsByRun();
-    return rows.map((row) => this.summarySnapshotFromRates(row, thresholds, historicalRates, countsByRun.get(row.runId)));
+    const reviewByRun = this.reviewProgressByRun();
+    return rows.map((row) => this.summarySnapshotFromRates(row, thresholds, historicalRates, countsByRun.get(row.runId), reviewByRun.get(row.runId)));
   }
 
   workspaceForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
@@ -273,7 +274,7 @@ export class SqliteDatabase {
     return ReconciliationWorkspaceSchema.parse({
       // The hydrated rows are already in hand, so the breakdown is counted from them
       // rather than re-queried.
-      ...this.summarySnapshotFromRates(run, thresholds, this.seededHistoricalRates(seedVersion), statusCountsFor(rows.map((row) => row.status))),
+      ...this.summarySnapshotFromRates(run, thresholds, this.seededHistoricalRates(seedVersion), statusCountsFor(rows.map((row) => row.status)), this.reviewProgressForRun(runId)),
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
@@ -286,7 +287,16 @@ export class SqliteDatabase {
   close(): void { this.db.close(); }
 
   private summarySnapshot(row: RunSummaryRow, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationRunSummary {
-    return this.summarySnapshotFromRates(row, thresholds, this.seededHistoricalRates(seedVersion), this.statusCountsForRun(row.runId));
+    return this.summarySnapshotFromRates(row, thresholds, this.seededHistoricalRates(seedVersion), this.statusCountsForRun(row.runId), this.reviewProgressForRun(row.runId));
+  }
+
+  /** One grouped read for a whole run list, rather than a progress query per row. */
+  private reviewProgressByRun(): ReadonlyMap<string, { reviewedUnmatched: number; totalUnmatched: number }> {
+    const rows = this.db.prepare(`SELECT run_id AS runId,
+      COALESCE(SUM(CASE WHEN status = 'unmatched' AND reviewed = 1 THEN 1 ELSE 0 END), 0) AS reviewedUnmatched,
+      COALESCE(SUM(CASE WHEN status = 'unmatched' THEN 1 ELSE 0 END), 0) AS totalUnmatched
+      FROM reconciliation_results GROUP BY run_id`).all() as unknown as { runId: string; reviewedUnmatched: number; totalUnmatched: number }[];
+    return new Map(rows.map((row) => [row.runId, { reviewedUnmatched: row.reviewedUnmatched, totalUnmatched: row.totalUnmatched }]));
   }
 
   /** Zero-filled so every canonical Status is present even when a run has none of it. */
@@ -308,9 +318,14 @@ export class SqliteDatabase {
       .map((history) => history.unresolvedRate);
   }
 
-  private summarySnapshotFromRates(row: RunSummaryRow, thresholds: AnomalyThresholds, historicalRates: readonly number[], statusCounts?: ReconciliationStatusCounts): ReconciliationRunSummary {
+  private summarySnapshotFromRates(row: RunSummaryRow, thresholds: AnomalyThresholds, historicalRates: readonly number[], statusCounts?: ReconciliationStatusCounts, reviewProgress?: { reviewedUnmatched: number; totalUnmatched: number }): ReconciliationRunSummary {
     const metrics = { total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate, unresolvedRate: row.unresolvedRate };
-    return ReconciliationRunSummarySchema.parse({ ...row, metrics, statusCounts: statusCounts ?? this.statusCountsForRun(row.runId), anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds) });
+    return ReconciliationRunSummarySchema.parse({
+      ...row, metrics,
+      statusCounts: statusCounts ?? this.statusCountsForRun(row.runId),
+      reviewProgress: reviewProgress ?? this.reviewProgressForRun(row.runId),
+      anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds)
+    });
   }
 
   private reviewProgressForRun(runId: string): { reviewedUnmatched: number; totalUnmatched: number } {

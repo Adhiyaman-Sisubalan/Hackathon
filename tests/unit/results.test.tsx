@@ -67,6 +67,14 @@ describe('Results workspace table', () => {
     expect(screen.getByText('Showing 1 results.')).toBeTruthy();
   });
 
+  it('shows no chart: the Results workspace is for investigating rows, not for Overview charts', () => {
+    const { container } = render(<Results workspace={workspace()} />);
+    expect(container.querySelector('figure')).toBeNull();
+    expect(screen.queryByText('Run composition')).toBeNull();
+    expect(screen.queryByText('Rates by as-of date')).toBeNull();
+    expect(screen.getByLabelText('Reconciliation summary')).toBeTruthy();
+  });
+
   it('retains the selected workspace and summary when a refresh fails, with an in-place retry', () => {
     let retries = 0;
     render(<Results workspace={workspace()} loadError="Timed out" onRetry={() => { retries += 1; }} />);

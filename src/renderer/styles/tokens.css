@@ -54,6 +54,13 @@
   --chart-missing-from-ot-murex: light-dark(#6d28d9, #8b5cf6);
   --chart-track: light-dark(#e7ebf0, #26313f);
 
+  /* Rate series for the per-date trend. These are measures rather than statuses, so the
+     set is validated as a categorical palette; the first two deliberately reuse the
+     matched and unmatched steps above, because that is what each rate is derived from. */
+  --chart-reconciliation-rate: light-dark(#166534, #199e70);
+  --chart-unresolved-rate: light-dark(#ca8a04, #c98500);
+  --chart-review-progress: light-dark(#2a78d6, #3987e5);
+
   /* Shape */
   --radius: .5rem;
   --radius-control: .5rem;

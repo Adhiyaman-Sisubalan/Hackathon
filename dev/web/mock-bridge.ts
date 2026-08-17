@@ -50,6 +50,7 @@ function workspaceOf(run: StoredRun): ReconciliationWorkspace {
   });
 }
 
+/** Keeps reviewProgress and statusCounts, which the Overview charts read per run. */
 function summaryOf(run: StoredRun): ReconciliationRunSummary {
   const { results: _results, ...summary } = workspaceOf(run);
   return summary as ReconciliationRunSummary;

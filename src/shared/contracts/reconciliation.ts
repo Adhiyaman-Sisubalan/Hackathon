@@ -29,14 +29,16 @@ export const ReconciliationAnomalySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('normal'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly(),
   z.object({ kind: z.literal('warning'), currentUnresolvedRate: z.number().min(0).max(1), historyCount: z.literal(5), baselineUnresolvedRate: z.number().min(0).max(1) }).readonly()
 ]);
+export const ReviewProgressSchema = z.object({ reviewedUnmatched: z.number().int().nonnegative(), totalUnmatched: z.number().int().nonnegative() }).refine((value) => value.reviewedUnmatched <= value.totalUnmatched).readonly();
 const ReconciliationRunIdentitySchema = z.object({
   runId: z.string().uuid(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), completedAt: z.string().datetime(), metrics: ReconciliationMetricsSchema,
-  statusCounts: ReconciliationStatusCountsSchema.optional()
+  statusCounts: ReconciliationStatusCountsSchema.optional(),
+  // Optional for the same reason as statusCounts: additive, and always populated by both adapters.
+  reviewProgress: ReviewProgressSchema.optional()
 });
 export const ReconciliationRunAggregateSchema = ReconciliationRunIdentitySchema.extend({ results: z.array(ReconciliationResultSchema).readonly() }).readonly();
 const ReconciliationRunSummaryObjectSchema = ReconciliationRunIdentitySchema.extend({ anomaly: ReconciliationAnomalySchema });
 export const ReconciliationRunSummarySchema = ReconciliationRunSummaryObjectSchema.readonly();
-export const ReviewProgressSchema = z.object({ reviewedUnmatched: z.number().int().nonnegative(), totalUnmatched: z.number().int().nonnegative() }).refine((value) => value.reviewedUnmatched <= value.totalUnmatched).readonly();
 const ReconciliationWorkspaceObjectSchema = ReconciliationRunSummaryObjectSchema.extend({
   results: z.array(ReconciliationResultSchema).readonly(),
   reviewProgress: ReviewProgressSchema.default({ reviewedUnmatched: 0, totalUnmatched: 0 })

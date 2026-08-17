@@ -1,0 +1,49 @@
+.figure { margin: 0; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+
+.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-4); }
+.caption { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+
+/* Identity comes from the swatch beside the name, never from colouring the text. */
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; list-style: none; }
+.legendItem { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: .75rem; font-weight: 600; }
+.swatch { width: .625rem; height: .625rem; border-radius: 2px; }
+.swatch[data-series='reconciliationRate'] { background: var(--chart-reconciliation-rate); }
+.swatch[data-series='unresolvedRate'] { background: var(--chart-unresolved-rate); }
+.swatch[data-series='reviewProgress'] { background: var(--chart-review-progress); }
+
+/* The axis column and the plot share one row so ticks line up with the gridlines they name.
+   Capped so a handful of dates read as a group instead of stretching across the card. */
+.plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); max-width: 46rem; }
+.axis { display: flex; flex-direction: column; justify-content: space-between; height: 11rem; color: var(--text-subtle); font-size: .6875rem; font-variant-numeric: tabular-nums; }
+.tick { line-height: 1; transform: translateY(-.35em); }
+.tick:last-child { transform: translateY(.1em); }
+
+.canvas { position: relative; }
+.gridlines { position: absolute; inset: 0 0 1.75rem; display: flex; flex-direction: column; justify-content: space-between; }
+.gridline { border-top: 1px solid var(--border-subtle); }
+.gridline:last-child { border-top-color: var(--border); }
+
+/* The group carries no gap of its own: bars plus label must total exactly the canvas
+   height, or the bars float off the 0% gridline. */
+.groups { position: relative; display: flex; align-items: flex-end; justify-content: space-evenly; gap: var(--space-4); height: calc(11rem + 1.75rem); overflow-x: auto; }
+.group { display: grid; align-content: end; flex: 1 1 0; min-width: 4.75rem; max-width: 7rem; }
+
+/* 2px of surface separates touching bars; the cap is rounded and the baseline square. */
+.bars { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 11rem; }
+.barSlot { display: flex; align-items: flex-end; flex: 1 1 0; max-width: 1.5rem; height: 100%; }
+.bar { display: block; width: 100%; border-radius: 4px 4px 0 0; }
+.bar[data-series='reconciliationRate'] { background: var(--chart-reconciliation-rate); }
+.bar[data-series='unresolvedRate'] { background: var(--chart-unresolved-rate); }
+.bar[data-series='reviewProgress'] { background: var(--chart-review-progress); }
+
+.groupLabel { height: 1.75rem; margin: 0; padding-top: var(--space-2); color: var(--text-muted); font-size: .75rem; line-height: 1rem; font-variant-numeric: tabular-nums; text-align: center; }
+
+.visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (forced-colors: active) {
+  /* System colours collapse the three fills onto one, so the bars gain an outline and
+     the hidden table remains the exact reading. */
+  .bar { border: 1px solid CanvasText; background: Canvas; }
+  .swatch { border: 1px solid CanvasText; }
+  .gridline { border-top-color: CanvasText; }
+}
