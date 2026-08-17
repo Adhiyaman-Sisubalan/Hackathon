@@ -95,32 +95,34 @@ export function Settings({ api }: { api?: SettingsApi } = {}) {
       </div>
     </div>
 
-    <div className={styles.chooser}>
-      <label htmlFor={selectId}>Settings table</label>
-      <select id={selectId} className={styles.select} value={table} onChange={(event) => setTable(event.target.value as SettingsTableId)}>
-        {settingsTableDefinitions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
-      </select>
-      <p className={styles.chooserNote}>{definition.description}</p>
-    </div>
-
     <section className={styles.card} aria-labelledby="settings-table-title">
-      <div className={styles.cardHead}>
-        <div>
-          <h2 id="settings-table-title">{definition.label}</h2>
-          <p className={styles.count} aria-live="polite">
-            {state.kind === 'ready' ? `${state.rows.length} ${state.rows.length === 1 ? 'row' : 'rows'}.` : state.kind === 'loading' ? 'Loading rows…' : 'Rows unavailable.'}
-            {notice ? ` ${notice}` : ''}
-          </p>
+      {/* The picker is the visible identity of what is being edited, so the heading
+          that names the section for assistive technology is not repeated on screen. */}
+      <h2 id="settings-table-title" className={styles.visuallyHidden}>{definition.label}</h2>
+      <div className={styles.toolbar}>
+        <div className={styles.field}>
+          <label htmlFor={selectId}>Settings table</label>
+          <span className={styles.selectWrap}>
+            <select id={selectId} className={styles.select} value={table} onChange={(event) => setTable(event.target.value as SettingsTableId)}>
+              {settingsTableDefinitions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
+            </select>
+            <svg className={styles.selectIcon} viewBox="0 0 12 8" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 1.75 6 6.25l4.5-4.5" /></svg>
+          </span>
         </div>
+        <p className={styles.toolbarNote}>{definition.description}</p>
         <button ref={addButtonRef} type="button" className={styles.primary} disabled={state.kind !== 'ready' || Boolean(draft)} onClick={() => { setNotice(undefined); setDraft(emptyDraft(table)); }}>Add row</button>
       </div>
+      <p className={styles.count} aria-live="polite">
+        {state.kind === 'ready' ? `${state.rows.length} ${state.rows.length === 1 ? 'row' : 'rows'}.` : state.kind === 'loading' ? 'Loading rows…' : 'Rows unavailable.'}
+        {notice ? ` ${notice}` : ''}
+      </p>
 
       {formError && !draft && <div className={styles.error} role="alert"><p>{formError}</p></div>}
 
       {draft && <form className={styles.form} aria-labelledby="settings-form-title" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <h3 ref={formHeadingRef} id="settings-form-title" tabIndex={-1}>{draft.id === 'new' ? `Add a ${definition.label} row` : `Edit row ${draft.id}`}</h3>
         <div className={styles.fields}>
-          {definition.columns.map((column) => <label key={column.id} className={styles.field}>
+          {definition.columns.map((column) => <label key={column.id}>
             <span>{column.label}</span>
             <input
               type="text"
@@ -164,12 +166,12 @@ export function Settings({ api }: { api?: SettingsApi } = {}) {
               {pendingDeleteId === row.id
                 ? <span className={styles.confirm}>
                     <span className={styles.confirmText}>Delete?</span>
-                    <button type="button" className={styles.danger} disabled={saving} onClick={() => void remove(row.id)}>Yes, delete</button>
-                    <button type="button" className={styles.secondary} disabled={saving} onClick={() => setPendingDeleteId(undefined)}>Keep</button>
+                    <button type="button" className={styles.rowDanger} disabled={saving} onClick={() => void remove(row.id)}>Yes, delete</button>
+                    <button type="button" className={styles.rowButton} disabled={saving} onClick={() => setPendingDeleteId(undefined)}>Keep</button>
                   </span>
                 : <span className={styles.rowActions}>
-                    <button type="button" className={styles.secondary} disabled={saving || Boolean(draft)} onClick={() => { setNotice(undefined); setDraft({ id: row.id, values: { ...row.values } }); }}>Edit</button>
-                    <button type="button" className={styles.secondary} disabled={saving || Boolean(draft)} onClick={() => { setNotice(undefined); setPendingDeleteId(row.id); }}>Delete</button>
+                    <button type="button" className={styles.rowButton} disabled={saving || Boolean(draft)} onClick={() => { setNotice(undefined); setDraft({ id: row.id, values: { ...row.values } }); }}>Edit</button>
+                    <button type="button" className={styles.rowButton} disabled={saving || Boolean(draft)} onClick={() => { setNotice(undefined); setPendingDeleteId(row.id); }}>Delete</button>
                   </span>}
             </td>
           </tr>)}</tbody>

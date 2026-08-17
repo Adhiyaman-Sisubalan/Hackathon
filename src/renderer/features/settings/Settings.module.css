@@ -2,61 +2,88 @@
 
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .eyebrow { margin: 0 0 var(--space-1); color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
-.header h1 { margin: 0; font-size: 1.75rem; font-weight: 650; letter-spacing: -.02em; }
+.header h1 { margin: 0; font-size: 1.75rem; font-weight: 600; line-height: 2.125rem; letter-spacing: -.01em; }
 .header h1:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 
-/* The table picker is the screen's primary control and stays above the data it scopes. */
-.chooser { display: grid; gap: var(--space-2); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-.chooser label { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
-.select { justify-self: start; min-width: 18rem; padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; font-weight: 600; }
-.chooserNote { margin: 0; color: var(--text-muted); font-size: .8125rem; }
+/* One card per table, laid out like the Results grid card: a toolbar of labelled
+   controls over a quiet divider, then the feedback line, then the data. */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.toolbarNote { flex: 1 1 16rem; margin: 0 0 var(--space-2); color: var(--text-muted); font-size: .8125rem; }
 
-.card { display: grid; gap: var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-.cardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
-.cardHead h2 { margin: 0 0 var(--space-1); font-size: 1.0625rem; font-weight: 650; }
-.count { margin: 0; color: var(--text-muted); font-size: .8125rem; }
+/* Field labels follow the run form's: sentence case and quiet, not a section legend. */
+.field { display: grid; gap: var(--space-2); }
+.field label { color: var(--text-muted); font-size: .75rem; font-weight: 600; }
 
-.primary { padding: var(--space-2) var(--space-4); color: var(--accent-text); background: var(--accent); border: 1px solid transparent; border-radius: var(--radius-control); font-weight: 650; }
-.primary:hover:enabled { background: var(--accent-hover); }
-.primary:disabled { background: var(--border-strong); color: var(--surface); }
-.secondary { padding: var(--space-1) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font-size: .8125rem; font-weight: 600; }
-.secondary:hover:enabled { background: var(--surface-hover); }
+/* A native select's chevron is the one part the page cannot style, so the control drops
+   the platform chrome and the arrow is drawn here in the same stroke language as the
+   navigation icons. Everything else matches the run form's inputs exactly. */
+.selectWrap { position: relative; display: inline-grid; align-items: center; }
+.select { appearance: none; height: 2.5rem; min-width: 16rem; padding: 0 2.5rem 0 var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; font-weight: 600; transition: border-color var(--motion-fast); }
+.select:hover:not(:disabled) { border-color: var(--accent); }
+.selectIcon { position: absolute; right: var(--space-3); width: .75rem; height: .5rem; color: var(--text-subtle); pointer-events: none; }
+
+.count { margin: 0; padding: var(--space-3) var(--space-4); color: var(--text-muted); font-size: .8125rem; }
+
+.primary { height: 2.5rem; padding: 0 var(--space-4); color: var(--accent-text); background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-control); font-weight: 650; transition: background var(--motion-fast), border-color var(--motion-fast); }
+.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.primary:disabled { background: var(--border-strong); border-color: var(--border-strong); color: var(--surface); }
+
+.secondary { height: 2.25rem; padding: 0 var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font-weight: 600; transition: background var(--motion-fast); }
+.secondary:hover:not(:disabled) { background: var(--surface-hover); }
 .secondary:disabled { color: var(--text-subtle); border-color: var(--border); }
-.danger { padding: var(--space-1) var(--space-3); color: var(--accent-text); background: var(--danger); border: 1px solid transparent; border-radius: var(--radius-control); font-size: .8125rem; font-weight: 650; }
-.danger:disabled { opacity: .6; }
 
-/* The editor sits above the table so the row being changed stays in view behind it. */
-.form { display: grid; gap: var(--space-3); padding: var(--space-4); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-card); }
+/* Row controls sit at the table's own density rather than the toolbar's. */
+.rowButton { height: 1.75rem; padding: 0 var(--space-2); color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); font-size: .75rem; font-weight: 600; transition: border-color var(--motion-fast), color var(--motion-fast); }
+.rowButton:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.rowButton:disabled { color: var(--text-subtle); opacity: .6; }
+.rowDanger { height: 1.75rem; padding: 0 var(--space-2); color: var(--accent-text); background: var(--danger); border: 1px solid var(--danger); border-radius: var(--radius-control); font-size: .75rem; font-weight: 650; }
+.rowDanger:disabled { opacity: .6; }
+
+/* The editor sits above the rows so the record being changed stays in view behind it. */
+.form { display: grid; gap: var(--space-3); margin: 0 var(--space-4) var(--space-4); padding: var(--space-4); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-card); }
 .form h3 { margin: 0; font-size: .9375rem; font-weight: 650; }
 .form h3:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); }
-.field { display: grid; gap: var(--space-1); }
-.field span { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.field input { padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; }
+.fields label { display: grid; gap: var(--space-2); }
+.fields span { color: var(--text-muted); font-size: .75rem; font-weight: 600; }
+.fields input { height: 2.5rem; padding: 0 var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; transition: border-color var(--motion-fast); }
+.fields input:hover:not(:disabled) { border-color: var(--accent); }
+.fields input:disabled { color: var(--text-subtle); background: var(--surface-raised); }
 .formActions { display: flex; align-items: center; gap: var(--space-2); }
 
 .tableWrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
-.table caption { text-align: left; }
-.table th, .table td { padding: var(--space-2) var(--space-3); text-align: left; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
-.table th { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-bottom-color: var(--border); }
+.table th, .table td { padding: var(--space-2) var(--space-4); text-align: left; border-top: 1px solid var(--border-subtle); white-space: nowrap; }
+.table thead th { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-top: 0; border-bottom: 1px solid var(--border); }
 .table tbody tr:hover { background: var(--surface-hover); }
 .table tbody tr[data-editing] { background: var(--accent-soft); }
+.table tbody tr[data-editing] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .actionsHead, .actions { text-align: right; }
 .rowActions, .confirm { display: inline-flex; align-items: center; gap: var(--space-2); }
-.confirmText { color: var(--danger); font-weight: 650; }
+.confirmText { color: var(--danger); font-size: .75rem; font-weight: 650; }
 
-.loading { margin: 0; color: var(--text-muted); }
-.empty { padding: var(--space-5); text-align: center; color: var(--text-muted); background: var(--surface-sunken); border: 1px dashed var(--border-strong); border-radius: var(--radius-card); }
+.loading { margin: 0; padding: 0 var(--space-4) var(--space-4); color: var(--text-muted); }
+.empty { margin: 0 var(--space-4) var(--space-4); padding: var(--space-5); text-align: center; color: var(--text-muted); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-card); }
 .empty p { margin: 0; }
 
-.error { display: grid; gap: var(--space-2); justify-items: start; padding: var(--space-3) var(--space-4); color: var(--text); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); border-radius: var(--radius-card); }
+.error { position: relative; display: grid; gap: var(--space-3); justify-items: start; margin: 0 var(--space-4) var(--space-4); padding: var(--space-3) var(--space-4) var(--space-3) 2.75rem; color: var(--text); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); border-radius: var(--radius-card); }
+.error::before { content: '!'; position: absolute; top: var(--space-3); left: var(--space-4); display: grid; place-items: center; width: 1.25rem; height: 1.25rem; background: var(--danger); color: var(--surface); border-radius: 50%; font-size: .75rem; font-weight: 700; }
 .error p { margin: 0; }
+/* Inside the editor the message is already framed by the form, so it keeps its own margin. */
+.form .error { margin: 0; }
 
 .visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .toolbar { align-items: stretch; }
+  .select { min-width: 0; width: 100%; }
+}
 
 @media (forced-colors: active) {
   .table tbody tr[data-editing] { background: Highlight; color: HighlightText; }
   .error { border-color: CanvasText; }
+  .error::before { background: CanvasText; color: Canvas; }
   .empty { border-color: CanvasText; }
+  .rowDanger { border-color: CanvasText; }
 }
