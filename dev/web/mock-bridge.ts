@@ -11,7 +11,7 @@
 import { seededRunHistory } from '../../fixtures/seeded-history.js';
 import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios.js';
 import { reconcileTrades } from '../../src/domain/reconciliation/reconciliation.js';
-import { anomalyContextFor, reconciliationMetricsFor } from '../../src/domain/metrics/reconciliation-metrics.js';
+import { anomalyContextFor, reconciliationMetricsFor, statusCountsFor } from '../../src/domain/metrics/reconciliation-metrics.js';
 import { reconciliationBootstrapConfig } from '../../src/main/bootstrap/reconciliation-config.js';
 import { ReconciliationWorkspaceSchema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../src/shared/contracts/reconciliation.js';
 import type { ReconciliationApi } from '../../src/shared/contracts/preload.js';
@@ -41,6 +41,7 @@ function workspaceOf(run: StoredRun): ReconciliationWorkspace {
   const unmatched = run.results.filter((result) => result.status === 'unmatched');
   return ReconciliationWorkspaceSchema.parse({
     runId: run.runId, asOfDate: run.asOfDate, completedAt: run.completedAt, metrics,
+    statusCounts: statusCountsFor(run.results.map((result) => result.status)),
     anomaly: anomalyContextFor(metrics.unresolvedRate, seededUnresolvedRates, thresholds),
     results: run.results,
     reviewProgress: { reviewedUnmatched: unmatched.filter((result) => result.reviewed).length, totalUnmatched: unmatched.length }

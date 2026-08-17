@@ -1,5 +1,6 @@
 import { formatPercentage } from '../../domain/metrics/reconciliation-metrics.js';
 import type { ReconciliationRunSummary, ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
+import { RunComposition } from './RunComposition.js';
 import styles from './SummaryStrip.module.css';
 
 export function SummaryStrip({ summary }: { summary: ReconciliationRunSummary | ReconciliationWorkspace }) {
@@ -7,6 +8,7 @@ export function SummaryStrip({ summary }: { summary: ReconciliationRunSummary | 
   const review = 'reviewProgress' in summary ? summary.reviewProgress : undefined;
   const reviewed = review && review.totalUnmatched > 0 ? review.reviewedUnmatched / review.totalUnmatched : 1;
   return <section className={styles.strip} aria-label="Reconciliation summary">
+    <RunComposition summary={summary} />
     <dl className={styles.metrics}>
       <div className={styles.metric}><dt>Total</dt><dd>{metrics.total}</dd></div>
       <div className={styles.metric}><dt>Matched</dt><dd className={styles.success}>{metrics.matched}</dd></div>

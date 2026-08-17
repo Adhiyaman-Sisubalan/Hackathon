@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '../../src/renderer/features/dashboard/Dashboard.js';
 import type { ReconciliationRunResult } from '../../src/shared/contracts/reconciliation.js';
@@ -34,6 +34,7 @@ describe('reconciliation dashboard form', () => {
     resolve({ ok: true, data: { workspace: { runId: '11111111-1111-4111-8111-111111111111', asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 1, matched: 1, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 }, anomaly: { kind: 'normal', currentUnresolvedRate: 0, historyCount: 5, baselineUnresolvedRate: .1 }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 0 }, results: [] } } });
     await waitFor(() => expect(completed).toHaveBeenCalledOnce());
     expect(await screen.findByLabelText('Reconciliation summary')).toBeTruthy();
-    expect(screen.getByText('100.0%')).toBeTruthy();
+    // Scoped to the metric: the composition chart shows the same rate in its centre.
+    expect(within(screen.getByText('Reconciliation rate').closest('div')!).getByText('100.0%')).toBeTruthy();
   });
 });

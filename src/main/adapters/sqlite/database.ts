@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
-import { anomalyContextFor, type AnomalyThresholds } from '../../../domain/metrics/reconciliation-metrics.js';
+import { anomalyContextFor, statusCountsFor, type AnomalyThresholds, type ReconciliationStatusCounts } from '../../../domain/metrics/reconciliation-metrics.js';
 import { BrokerEmailDraftSchema, ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, RunReportV1Schema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace, type RunReportV1 } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
 
@@ -121,7 +121,9 @@ export class SqliteDatabase {
       total, matched, unresolved, reconciliation_rate AS reconciliationRate, unresolved_rate AS unresolvedRate
       FROM runs WHERE status = 'completed' ORDER BY completed_at DESC, id DESC`).all() as unknown as RunSummaryRow[];
     const historicalRates = this.seededHistoricalRates(seedVersion);
-    return rows.map((row) => this.summarySnapshotFromRates(row, thresholds, historicalRates));
+    // One grouped read for the whole list rather than a per-run count query.
+    const countsByRun = this.statusCountsByRun();
+    return rows.map((row) => this.summarySnapshotFromRates(row, thresholds, historicalRates, countsByRun.get(row.runId)));
   }
 
   workspaceForRun(runId: string, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationWorkspace | null {
@@ -215,7 +217,9 @@ export class SqliteDatabase {
       LEFT JOIN source_trades AS ot_murex ON ot_murex.run_id = results.run_id AND ot_murex.source = 'ot-murex' AND ot_murex.trade_id = results.ot_murex_trade_id
       ORDER BY result_rowid ASC`).all(runId) as unknown as HydratedResultRow[];
     return ReconciliationWorkspaceSchema.parse({
-      ...this.summarySnapshotFromRates(run, thresholds, this.seededHistoricalRates(seedVersion)),
+      // The hydrated rows are already in hand, so the breakdown is counted from them
+      // rather than re-queried.
+      ...this.summarySnapshotFromRates(run, thresholds, this.seededHistoricalRates(seedVersion), statusCountsFor(rows.map((row) => row.status))),
       results: rows.map((row) => {
         const brokerTrade = hydrateTrade(row, 'broker');
         const otMurexTrade = hydrateTrade(row, 'otMurex');
@@ -228,7 +232,20 @@ export class SqliteDatabase {
   close(): void { this.db.close(); }
 
   private summarySnapshot(row: RunSummaryRow, seedVersion: string, thresholds: AnomalyThresholds): ReconciliationRunSummary {
-    return this.summarySnapshotFromRates(row, thresholds, this.seededHistoricalRates(seedVersion));
+    return this.summarySnapshotFromRates(row, thresholds, this.seededHistoricalRates(seedVersion), this.statusCountsForRun(row.runId));
+  }
+
+  /** Zero-filled so every canonical Status is present even when a run has none of it. */
+  private statusCountsForRun(runId: string): ReconciliationStatusCounts {
+    const rows = this.db.prepare('SELECT status, COUNT(*) AS count FROM reconciliation_results WHERE run_id = ? GROUP BY status').all(runId) as unknown as StatusCountRow[];
+    return statusCountsFromRows(rows);
+  }
+
+  private statusCountsByRun(): ReadonlyMap<string, ReconciliationStatusCounts> {
+    const rows = this.db.prepare('SELECT run_id AS runId, status, COUNT(*) AS count FROM reconciliation_results GROUP BY run_id, status').all() as unknown as (StatusCountRow & { runId: string })[];
+    const grouped = new Map<string, StatusCountRow[]>();
+    for (const row of rows) grouped.set(row.runId, [...(grouped.get(row.runId) ?? []), row]);
+    return new Map([...grouped].map(([runId, runRows]) => [runId, statusCountsFromRows(runRows)]));
   }
 
   private seededHistoricalRates(seedVersion: string): readonly number[] {
@@ -237,9 +254,9 @@ export class SqliteDatabase {
       .map((history) => history.unresolvedRate);
   }
 
-  private summarySnapshotFromRates(row: RunSummaryRow, thresholds: AnomalyThresholds, historicalRates: readonly number[]): ReconciliationRunSummary {
+  private summarySnapshotFromRates(row: RunSummaryRow, thresholds: AnomalyThresholds, historicalRates: readonly number[], statusCounts?: ReconciliationStatusCounts): ReconciliationRunSummary {
     const metrics = { total: row.total, matched: row.matched, unresolved: row.unresolved, reconciliationRate: row.reconciliationRate, unresolvedRate: row.unresolvedRate };
-    return ReconciliationRunSummarySchema.parse({ ...row, metrics, anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds) });
+    return ReconciliationRunSummarySchema.parse({ ...row, metrics, statusCounts: statusCounts ?? this.statusCountsForRun(row.runId), anomaly: anomalyContextFor(metrics.unresolvedRate, historicalRates, thresholds) });
   }
 
   private reviewProgressForRun(runId: string): { reviewedUnmatched: number; totalUnmatched: number } {
@@ -268,6 +285,17 @@ interface BrokerPreviewSelectionRow { readonly status: string; readonly brokerNa
 interface BrokerPreviewRow {
   readonly tradeId: string; readonly isin: string; readonly buySell: 'buy' | 'sell'; readonly amount: string; readonly quantity: string; readonly currency: string;
   readonly settlementDate: string; readonly mismatchReason: 'amount-mismatch' | 'quantity-mismatch' | 'amount-and-quantity-mismatch'; readonly comment: string | null;
+}
+
+interface StatusCountRow { readonly status: string; readonly count: number; }
+
+/** Folds `GROUP BY status` rows onto the zero-filled canonical shape. */
+function statusCountsFromRows(rows: readonly StatusCountRow[]): ReconciliationStatusCounts {
+  const counts = { ...statusCountsFor([]) };
+  for (const row of rows) {
+    if (row.status in counts) counts[row.status as keyof ReconciliationStatusCounts] = row.count;
+  }
+  return counts;
 }
 
 interface RunSummaryRow {

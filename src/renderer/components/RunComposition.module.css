@@ -1,0 +1,51 @@
+.figure { margin: 0; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+
+.caption { margin-bottom: var(--space-3); color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+
+/* The donut keeps a fixed cell and the breakdown takes the remaining width, so the
+   figure never squeezes the ring below a readable size. */
+.body { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+.chartCell { position: relative; flex: 0 0 auto; width: 8.5rem; height: 8.5rem; }
+.donut { width: 100%; height: 100%; }
+.track { stroke: var(--chart-track); }
+.arc { stroke-linecap: butt; }
+
+.arc[data-status='matched'] { stroke: var(--chart-matched); }
+.arc[data-status='unmatched'] { stroke: var(--chart-unmatched); }
+.arc[data-status='missing-from-broker'] { stroke: var(--chart-missing-from-broker); }
+.arc[data-status='missing-from-ot-murex'] { stroke: var(--chart-missing-from-ot-murex); }
+
+/* Centred over the ring rather than inside the SVG, so it inherits the app's text tokens. */
+.centre { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 2px; margin: 0; pointer-events: none; }
+.centreValue { color: var(--text); font-size: 1.5rem; font-weight: 650; line-height: 1.75rem; letter-spacing: -.01em; }
+.centreLabel { color: var(--text-subtle); font-size: .6875rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+
+/* The breakdown is also the table view: every plotted value is readable as text. */
+/* Capped so counts stay beside their labels instead of drifting to the far edge on a
+   wide window; the figure keeps the leftover as air. */
+.legend { flex: 1 1 17rem; max-width: 34rem; display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.legendRow { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.legendRow:last-child { border-bottom: 0; }
+
+/* The glyph sits inside the fill, so it takes white or ink by the fill's lightness
+   rather than a text token. It repeats the label, never replaces it. */
+.swatch { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: var(--radius-pill); color: #ffffff; font-size: .625rem; font-weight: 700; line-height: 1; }
+.swatch[data-status='matched'] { background: var(--chart-matched); }
+.swatch[data-status='unmatched'] { background: var(--chart-unmatched); color: #1f1300; }
+.swatch[data-status='missing-from-broker'] { background: var(--chart-missing-from-broker); }
+.swatch[data-status='missing-from-ot-murex'] { background: var(--chart-missing-from-ot-murex); }
+
+.legendText { display: grid; gap: 1px; min-width: 0; }
+.legendLabel { color: var(--text); font-size: .8125rem; font-weight: 600; }
+.legendMeaning { color: var(--text-subtle); font-size: .6875rem; }
+/* Counts and shares stack into columns, so these take tabular figures. */
+.legendCount { color: var(--text); font-size: .9375rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.legendShare { min-width: 3.25rem; color: var(--text-muted); font-size: .8125rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (forced-colors: active) {
+  /* System colours collapse the four fills onto one, which would make the ring lie.
+     The breakdown list carries every label, count, and share, so only the ring goes. */
+  .chartCell { display: none; }
+  .swatch { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .legendRow { border-bottom-color: CanvasText; }
+}

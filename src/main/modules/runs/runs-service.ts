@@ -1,7 +1,7 @@
 import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import { mkdir, unlink, link, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { reconciliationMetricsFor } from '../../../domain/metrics/reconciliation-metrics.js';
+import { reconciliationMetricsFor, statusCountsFor } from '../../../domain/metrics/reconciliation-metrics.js';
 import { reconciliationBootstrapConfig } from '../../bootstrap/reconciliation-config.js';
 import { ReportWorkerReceiptSchema, type BrokerEmailDraft, ReconciliationRunAggregateSchema, type ReconciliationRunSummary, type ReconciliationWorkspace } from '../../../shared/contracts/reconciliation.js';
 import { DuplicateTradeIdError, reconcileTrades, type ReconciliationResult } from '../../../domain/reconciliation/reconciliation.js';
@@ -114,7 +114,7 @@ export class RunsService {
     try {
       notify(report, { asOfDate, phase: 'started' });
       const results = reconcileTrades(scenario.brokerTrades, scenario.otMurexTrades);
-      const aggregate = ReconciliationRunAggregateSchema.parse({ runId: this.dependencies.ids.next(), asOfDate, completedAt: this.dependencies.clock.now(), metrics: metricsFor(results), results });
+      const aggregate = ReconciliationRunAggregateSchema.parse({ runId: this.dependencies.ids.next(), asOfDate, completedAt: this.dependencies.clock.now(), metrics: metricsFor(results), statusCounts: statusCountsFor(results.map((result) => result.status)), results });
       this.database.persistRun(aggregate);
       committed = true;
       const workspace = this.workspaceForRun(aggregate.runId);

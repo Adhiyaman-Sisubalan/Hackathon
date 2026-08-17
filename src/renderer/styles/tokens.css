@@ -41,6 +41,19 @@
   --danger: light-dark(#b42318, #f87171);
   --danger-soft: light-dark(#fef1f1, #3a2020);
 
+  /* Chart marks — the four canonical Status IDs as fills.
+     Deliberately their own steps rather than the status *text* colours above: fills are
+     read against the surface, and both missing-* statuses share --danger as text, which
+     would make two segments of one chart indistinguishable. Each set is validated for
+     the surface it renders on (lightness band, chroma floor, colour-vision separation,
+     contrast); segments also carry direct labels and a text breakdown, so colour never
+     carries a value alone. */
+  --chart-matched: light-dark(#166534, #199e70);
+  --chart-unmatched: light-dark(#ca8a04, #c98500);
+  --chart-missing-from-broker: light-dark(#b42318, #dc2626);
+  --chart-missing-from-ot-murex: light-dark(#6d28d9, #8b5cf6);
+  --chart-track: light-dark(#e7ebf0, #26313f);
+
   /* Shape */
   --radius: .5rem;
   --radius-control: .5rem;

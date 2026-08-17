@@ -118,9 +118,12 @@ describe('persisted reconciliation runs', () => {
     const second = runs.run('2026-08-14');
 
     expect(runs.listCompletedRuns()).toEqual([
-      { runId: second.runId, asOfDate: second.asOfDate, completedAt: second.completedAt, metrics: second.metrics, anomaly: second.anomaly },
-      { runId: first.runId, asOfDate: first.asOfDate, completedAt: first.completedAt, metrics: first.metrics, anomaly: first.anomaly }
+      { runId: second.runId, asOfDate: second.asOfDate, completedAt: second.completedAt, metrics: second.metrics, statusCounts: second.statusCounts, anomaly: second.anomaly },
+      { runId: first.runId, asOfDate: first.asOfDate, completedAt: first.completedAt, metrics: first.metrics, statusCounts: first.statusCounts, anomaly: first.anomaly }
     ]);
+    // The listed breakdown is counted in SQL; it must agree with the persisted Results.
+    expect(second.statusCounts).toEqual({ matched: 0, unmatched: 1, 'missing-from-broker': 0, 'missing-from-ot-murex': 1 });
+    expect(first.statusCounts).toEqual({ matched: 2, unmatched: 2, 'missing-from-broker': 1, 'missing-from-ot-murex': 1 });
     expect(runs.workspaceForRun(first.runId)).toEqual(first);
     expect(scenarioLookups).toBe(2);
     expect(runs.workspaceForRun('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).toBeNull();

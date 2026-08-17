@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anomalyContextFor, formatPercentage, reconciliationMetricsFor } from '../../src/domain/metrics/reconciliation-metrics.js';
+import { anomalyContextFor, formatPercentage, reconciliationMetricsFor, statusCountsFor } from '../../src/domain/metrics/reconciliation-metrics.js';
 import { reconciliationBootstrapConfig } from '../../src/main/bootstrap/reconciliation-config.js';
 
 describe('reconciliation summary metrics', () => {
@@ -7,6 +7,21 @@ describe('reconciliation summary metrics', () => {
     expect(reconciliationMetricsFor([])).toEqual({ total: 0, matched: 0, unresolved: 0, reconciliationRate: 0, unresolvedRate: 0 });
     expect(formatPercentage(0)).toBe('0.0%');
     expect(formatPercentage(1 / 3)).toBe('33.3%');
+  });
+
+  it('counts every canonical status, zero-filling those a run does not contain', () => {
+    expect(statusCountsFor([])).toEqual({ matched: 0, unmatched: 0, 'missing-from-broker': 0, 'missing-from-ot-murex': 0 });
+    expect(statusCountsFor(['matched', 'unmatched', 'matched', 'missing-from-ot-murex', 'unmatched', 'missing-from-broker']))
+      .toEqual({ matched: 2, unmatched: 2, 'missing-from-broker': 1, 'missing-from-ot-murex': 1 });
+  });
+
+  it('keeps the breakdown consistent with the matched/unresolved split and ignores unknown statuses', () => {
+    const statuses = ['matched', 'unmatched', 'missing-from-broker', 'not-a-status'];
+    const counts = statusCountsFor(statuses);
+    const metrics = reconciliationMetricsFor(statuses);
+    expect(counts).toEqual({ matched: 1, unmatched: 1, 'missing-from-broker': 1, 'missing-from-ot-murex': 0 });
+    expect(counts.matched).toBe(metrics.matched);
+    expect(counts.unmatched + counts['missing-from-broker'] + counts['missing-from-ot-murex']).toBe(metrics.unresolved - 1);
   });
 
   it('evaluates the percentage-point threshold exactly without rounding or tolerance', () => {
