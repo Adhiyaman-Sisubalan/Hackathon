@@ -38,7 +38,13 @@ export function App({ initialThemeMode = 'system' }: { initialThemeMode?: ThemeM
   };
   return <div className={styles.shell}>
     <aside className={styles.sidebar}>
-      <div className={styles.brand}><span className={styles.mark} aria-hidden="true">R</span><span className={styles.brandName}>Reconciliation</span></div>
+      <div className={styles.brand}>
+        <span className={styles.mark} aria-hidden="true">RF</span>
+        <span className={styles.brandText}>
+          <span className={styles.brandName}>ReconFlow</span>
+          <span className={styles.brandTagline}>Automate. Reconcile. Resolve.</span>
+        </span>
+      </div>
       <nav aria-label="Primary" className={styles.navigation}>
         <p className={styles.navLabel}>Workspace</p>
         {appViews.map((item) => <button key={item.id} type="button" className={styles.navItem} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}>
@@ -50,7 +56,7 @@ export function App({ initialThemeMode = 'system' }: { initialThemeMode?: ThemeM
     </aside>
     <div className={styles.frame}>
       <header className={styles.topbar}>
-        <p className={styles.crumbs}><span className={styles.crumbRoot}>Reconciliation</span><span className={styles.crumbSeparator} aria-hidden="true">/</span>{currentLabel}</p>
+        <p className={styles.crumbs}><span className={styles.crumbRoot}>ReconFlow</span><span className={styles.crumbSeparator} aria-hidden="true">/</span>{currentLabel}</p>
         <div className={styles.topbarMeta}>
           <p className={styles.environment}><span className={styles.environmentDot} aria-hidden="true" />Local demo data</p>
           <div className={styles.themeToggle} role="group" aria-label="Theme">

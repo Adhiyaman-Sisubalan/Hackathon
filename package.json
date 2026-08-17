@@ -1,7 +1,7 @@
 {
   "name": "reconciliation-desktop",
   "version": "0.1.0",
-  "description": "Local reconciliation desktop prototype",
+  "description": "ReconFlow — Automate. Reconcile. Resolve. Local reconciliation desktop prototype",
   "main": ".vite/build/main.js",
   "private": true,
   "engines": {

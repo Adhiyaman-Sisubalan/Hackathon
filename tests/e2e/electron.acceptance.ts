@@ -7,7 +7,8 @@ import ExcelJS from 'exceljs';
 
 const userData = mkdtempSync(path.join(tmpdir(), 'reconciliation-e2e-'));
 const reportOutput = path.join(userData, 'mock-output');
-const packagedExecutable = path.resolve('out/reconciliation-desktop-darwin-arm64/reconciliation-desktop.app/Contents/MacOS/reconciliation-desktop');
+// Follows forge's packagerConfig.name, which names the packaged bundle.
+const packagedExecutable = path.resolve('out/ReconFlow-darwin-arm64/ReconFlow.app/Contents/MacOS/ReconFlow');
 
 async function assertReportWorkbook(filename: string, runId: string): Promise<void> {
   const workbook = new ExcelJS.Workbook();
@@ -56,9 +57,15 @@ async function runAcceptance(): Promise<void> {
     await page.getByRole('button', { name: 'Amount' }).click();
     await page.getByLabel('Trade ID').check();
     await page.getByRole('columnheader', { name: 'Trade ID' }).waitFor();
-    await page.getByLabel('Reconciliation summary').waitFor();
-    await page.getByText('33.3%', { exact: true }).waitFor();
-    await page.getByText('66.7%', { exact: true }).waitFor();
+    const summary = page.getByLabel('Reconciliation summary');
+    await summary.waitFor();
+    // Scoped to the metric tiles: the composition chart repeats these rates in its
+    // centre figure and its per-status shares.
+    const metricValue = (label: string) => summary.locator('div', { has: page.getByText(label, { exact: true }) }).locator('dd');
+    await metricValue('Reconciliation rate').getByText('33.3%', { exact: true }).waitFor();
+    await metricValue('Unresolved rate').getByText('66.7%', { exact: true }).waitFor();
+    // The chart's own breakdown, which the tiles do not carry.
+    await page.getByRole('img', { name: /Reconciliation run composition/ }).waitFor();
     await page.getByText(/Unresolved rate is higher than the seeded baseline/).waitFor();
     const unmatched = page.getByRole('button', { name: 'Select BRK-202' });
     await unmatched.focus();
