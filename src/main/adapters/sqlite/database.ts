@@ -17,6 +17,14 @@ const settingsPhysicalTables: Record<SettingsTableId, { readonly table: string; 
   'data-enrichment': {
     table: 'data_enrichment',
     columns: [{ id: 'provider', sql: 'provider' }, { id: 'field', sql: 'field' }, { id: 'source', sql: 'source_value' }, { id: 'target', sql: 'target_value' }]
+  },
+  'email-group': {
+    table: 'email_group',
+    columns: [{ id: 'groupName', sql: 'group_name' }, { id: 'to', sql: 'to_recipients' }, { id: 'cc', sql: 'cc_recipients' }, { id: 'remarks', sql: 'remarks' }]
+  },
+  'auto-validation': {
+    table: 'auto_validation',
+    columns: [{ id: 'broker', sql: 'broker' }, { id: 'criteria', sql: 'criteria' }, { id: 'remarks', sql: 'remarks' }, { id: 'validated', sql: 'validated' }]
   }
 };
 
@@ -111,7 +119,9 @@ export class SqliteDatabase {
 
   listSettingsRows(table: SettingsTableId): readonly SettingsRow[] {
     const physical = settingsPhysicalTables[table];
-    const selected = physical.columns.map((column) => `${column.sql} AS ${column.id}`).join(', ');
+    // Aliases are quoted: column ids come from the whitelist above, and some of them
+    // ("to") are SQL keywords that would otherwise be a syntax error.
+    const selected = physical.columns.map((column) => `${column.sql} AS "${column.id}"`).join(', ');
     const rows = this.db.prepare(`SELECT id, ${selected} FROM ${physical.table} ORDER BY id ASC`).all() as unknown as Record<string, string | number>[];
     return rows.map((row) => ({
       id: Number(row.id),

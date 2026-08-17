@@ -99,9 +99,9 @@ function validatedSettingsValues(table: SettingsTableId, values: SettingsValues)
   const allowed = new Set(definition.columns.map((column) => column.id));
   const unknown = Object.keys(values).filter((key) => !allowed.has(key));
   if (unknown.length > 0) return `Unknown ${definition.label} column: ${unknown.join(', ')}.`;
-  const missing = definition.columns.filter((column) => (values[column.id] ?? '').trim() === '');
+  const missing = definition.columns.filter((column) => !column.optional && (values[column.id] ?? '').trim() === '');
   if (missing.length > 0) return `${missing.map((column) => column.label).join(', ')} cannot be empty.`;
-  return Object.fromEntries(definition.columns.map((column) => [column.id, values[column.id]!.trim()]));
+  return Object.fromEntries(definition.columns.map((column) => [column.id, (values[column.id] ?? '').trim()]));
 }
 
 function mutate(runId: string, resultId: string, change: (result: StoredResult) => StoredResult, eligible: (result: StoredResult) => boolean) {

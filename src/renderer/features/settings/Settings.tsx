@@ -58,7 +58,8 @@ export function Settings({ api }: { api?: SettingsApi } = {}) {
 
   const submit = async () => {
     if (!draft || !settingsApi || saving) return;
-    const blank = definition.columns.filter((column) => (draft.values[column.id] ?? '').trim() === '');
+    // Optional columns may be left blank; main applies the same rule authoritatively.
+    const blank = definition.columns.filter((column) => !column.optional && (draft.values[column.id] ?? '').trim() === '');
     if (blank.length > 0) { setFormError(`${blank.map((column) => column.label).join(', ')} cannot be empty.`); return; }
     setSaving(true); setFormError(undefined);
     try {
@@ -122,15 +123,24 @@ export function Settings({ api }: { api?: SettingsApi } = {}) {
       {draft && <form className={styles.form} aria-labelledby="settings-form-title" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <h3 ref={formHeadingRef} id="settings-form-title" tabIndex={-1}>{draft.id === 'new' ? `Add a ${definition.label} row` : `Edit row ${draft.id}`}</h3>
         <div className={styles.fields}>
-          {definition.columns.map((column) => <label key={column.id}>
-            <span>{column.label}</span>
-            <input
-              type="text"
-              value={draft.values[column.id] ?? ''}
-              maxLength={200}
-              disabled={saving}
-              onChange={(event) => setDraft({ ...draft, values: { ...draft.values, [column.id]: event.target.value } })}
-            />
+          {definition.columns.map((column) => <label key={column.id} data-wide={column.multiline ? true : undefined}>
+            <span>{column.label}{column.optional && <span className={styles.optional}> (optional)</span>}</span>
+            {column.multiline
+              ? <textarea
+                  className={styles.textarea}
+                  value={draft.values[column.id] ?? ''}
+                  maxLength={1000}
+                  rows={3}
+                  disabled={saving}
+                  onChange={(event) => setDraft({ ...draft, values: { ...draft.values, [column.id]: event.target.value } })}
+                />
+              : <input
+                  type="text"
+                  value={draft.values[column.id] ?? ''}
+                  maxLength={1000}
+                  disabled={saving}
+                  onChange={(event) => setDraft({ ...draft, values: { ...draft.values, [column.id]: event.target.value } })}
+                />}
           </label>)}
         </div>
         {formError && <div className={styles.error} role="alert"><p>{formError}</p></div>}
@@ -161,7 +171,10 @@ export function Settings({ api }: { api?: SettingsApi } = {}) {
             <th scope="col" className={styles.actionsHead}>Actions</th>
           </tr></thead>
           <tbody>{state.rows.map((row) => <tr key={row.id} data-editing={draft?.id === row.id ? true : undefined}>
-            {definition.columns.map((column) => <td key={column.id}>{row.values[column.id]}</td>)}
+            {/* Recipient lists and criteria wrap; short columns stay on one line. */}
+            {definition.columns.map((column) => <td key={column.id} data-wrap={column.multiline ? true : undefined}>
+              {row.values[column.id] === '' ? <span className={styles.blank}>—</span> : row.values[column.id]}
+            </td>)}
             <td className={styles.actions}>
               {pendingDeleteId === row.id
                 ? <span className={styles.confirm}>

@@ -46,7 +46,13 @@
 .form h3:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); }
 .fields label { display: grid; gap: var(--space-2); }
+/* A recipient list needs the row to itself rather than a third of it. */
+.fields label[data-wide] { grid-column: 1 / -1; }
 .fields span { color: var(--text-muted); font-size: .75rem; font-weight: 600; }
+.optional { color: var(--text-subtle); font-weight: 500; }
+.textarea { min-height: 4.5rem; padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; line-height: 1.4; resize: vertical; transition: border-color var(--motion-fast); }
+.textarea:hover:not(:disabled) { border-color: var(--accent); }
+.textarea:disabled { color: var(--text-subtle); background: var(--surface-raised); }
 .fields input { height: 2.5rem; padding: 0 var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; transition: border-color var(--motion-fast); }
 .fields input:hover:not(:disabled) { border-color: var(--accent); }
 .fields input:disabled { color: var(--text-subtle); background: var(--surface-raised); }
@@ -54,7 +60,10 @@
 
 .tableWrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
-.table th, .table td { padding: var(--space-2) var(--space-4); text-align: left; border-top: 1px solid var(--border-subtle); white-space: nowrap; }
+.table th, .table td { padding: var(--space-2) var(--space-4); text-align: left; border-top: 1px solid var(--border-subtle); white-space: nowrap; vertical-align: top; }
+/* Long values wrap inside a bounded column instead of stretching the table off-screen. */
+.table td[data-wrap] { max-width: 26rem; white-space: normal; word-break: break-word; line-height: 1.45; }
+.blank { color: var(--text-subtle); }
 .table thead th { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-top: 0; border-bottom: 1px solid var(--border); }
 .table tbody tr:hover { background: var(--surface-hover); }
 .table tbody tr[data-editing] { background: var(--accent-soft); }

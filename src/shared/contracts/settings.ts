@@ -7,11 +7,18 @@ import { result } from './result.js';
  * from it, and main validates every submitted row against it. Adding a table is a change
  * to this list plus its physical mapping in the SQLite adapter — no new UI or handlers.
  */
-export const settingsTableIds = ['source-header-mapping', 'data-enrichment'] as const;
+export const settingsTableIds = ['source-header-mapping', 'data-enrichment', 'email-group', 'auto-validation'] as const;
 export const SettingsTableIdSchema = z.enum(settingsTableIds);
 export type SettingsTableId = z.infer<typeof SettingsTableIdSchema>;
 
-export interface SettingsColumnDefinition { readonly id: string; readonly label: string; }
+export interface SettingsColumnDefinition {
+  readonly id: string;
+  readonly label: string;
+  /** Blank is a real value for this column, so it is not required on save. */
+  readonly optional?: boolean;
+  /** Long free text — recipient lists and criteria — gets a textarea rather than a single line. */
+  readonly multiline?: boolean;
+}
 export interface SettingsTableDefinition {
   readonly id: SettingsTableId;
   readonly label: string;
@@ -41,6 +48,29 @@ export const settingsTableDefinitions: readonly SettingsTableDefinition[] = [
       { id: 'source', label: 'Source' },
       { id: 'target', label: 'Target' }
     ]
+  },
+  {
+    id: 'email-group',
+    label: 'Email_Group',
+    description: 'Recipients used when a broker follow-up is addressed to a desk rather than one contact.',
+    columns: [
+      { id: 'groupName', label: 'Email Group Name' },
+      { id: 'to', label: 'To', multiline: true },
+      // A group can legitimately have nobody on copy.
+      { id: 'cc', label: 'CC', optional: true, multiline: true },
+      { id: 'remarks', label: 'Remarks', optional: true, multiline: true }
+    ]
+  },
+  {
+    id: 'auto-validation',
+    label: 'Auto_Validation',
+    description: 'Criteria that let a broker\u2019s trades be validated without manual review.',
+    columns: [
+      { id: 'broker', label: 'Broker' },
+      { id: 'criteria', label: 'Criteria', multiline: true },
+      { id: 'remarks', label: 'Remarks', optional: true },
+      { id: 'validated', label: 'Validated' }
+    ]
   }
 ];
 
@@ -50,8 +80,9 @@ export function settingsTableDefinition(id: SettingsTableId): SettingsTableDefin
   return definition;
 }
 
-/** Values are free text: these tables describe other systems' vocabulary, not ours. */
-export const SettingsValueSchema = z.string().max(200);
+/** Values are free text: these tables describe other systems' vocabulary, not ours. The
+    ceiling is generous because a recipient list is one value holding many addresses. */
+export const SettingsValueSchema = z.string().max(1_000);
 export const SettingsValuesSchema = z.record(z.string(), SettingsValueSchema);
 export const SettingsRowSchema = z.object({ id: z.number().int().positive(), values: SettingsValuesSchema }).readonly();
 

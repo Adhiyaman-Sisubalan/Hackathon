@@ -1,4 +1,4 @@
-import { settingsDefaults, settingsSeedVersion } from '../../../../fixtures/settings-defaults.js';
+import { settingsSeedBatches } from '../../../../fixtures/settings-defaults.js';
 import { settingsTableDefinition, type SettingsRow, type SettingsTableId, type SettingsValues } from '../../../shared/contracts/settings.js';
 import type { SqliteDatabase } from '../../adapters/sqlite/database.js';
 
@@ -20,14 +20,19 @@ export class SettingsValuesInvalidError extends Error {
 export class SettingsService {
   constructor(private readonly database: SqliteDatabase) {}
 
-  /** Applied once per seed version, so edits and deletions are never overwritten. */
+  /**
+   * Applied once per batch version, so edits and deletions are never overwritten and a
+   * database seeded before a batch existed still receives that batch on the next launch.
+   */
   seed(): void {
     this.database.transaction(() => {
-      if (this.database.hasSeed(settingsSeedVersion)) return;
-      for (const table of Object.keys(settingsDefaults) as SettingsTableId[]) {
-        for (const row of settingsDefaults[table]) this.database.createSettingsRow(table, row.values);
+      for (const batch of settingsSeedBatches) {
+        if (this.database.hasSeed(batch.version)) continue;
+        for (const [table, rows] of Object.entries(batch.tables)) {
+          for (const row of rows) this.database.createSettingsRow(table as SettingsTableId, row.values);
+        }
+        this.database.recordSeed(batch.version);
       }
-      this.database.recordSeed(settingsSeedVersion);
     });
   }
 
@@ -59,8 +64,9 @@ export class SettingsService {
     const allowed = new Set(definition.columns.map((column) => column.id));
     const unknown = Object.keys(values).filter((key) => !allowed.has(key));
     if (unknown.length > 0) throw new SettingsValuesInvalidError(`Unknown ${definition.label} column: ${unknown.join(', ')}.`);
-    const missing = definition.columns.filter((column) => (values[column.id] ?? '').trim() === '');
+    // Optional columns are stored empty rather than refused; a group with nobody on copy is real.
+    const missing = definition.columns.filter((column) => !column.optional && (values[column.id] ?? '').trim() === '');
     if (missing.length > 0) throw new SettingsValuesInvalidError(`${missing.map((column) => column.label).join(', ')} cannot be empty.`);
-    return Object.fromEntries(definition.columns.map((column) => [column.id, values[column.id]!.trim()]));
+    return Object.fromEntries(definition.columns.map((column) => [column.id, (values[column.id] ?? '').trim()]));
   }
 }

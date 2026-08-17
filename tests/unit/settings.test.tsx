@@ -17,7 +17,7 @@ const enrichmentRows: SettingsRow[] = [
 
 /** Mirrors the bridge: every call answers with the whole reloaded table. */
 function stubApi(overrides: Partial<ReconciliationApi['settings']> = {}): ReconciliationApi['settings'] {
-  const rowsFor = (table: SettingsTableId) => table === 'source-header-mapping' ? mappingRows : enrichmentRows;
+  const rowsFor = (table: SettingsTableId) => table === 'source-header-mapping' ? mappingRows : table === 'data-enrichment' ? enrichmentRows : [];
   return {
     list: vi.fn(async (table: SettingsTableId) => ({ ok: true as const, data: { table, rows: rowsFor(table) } })),
     create: vi.fn(async (table: SettingsTableId, values: SettingsValues) => ({ ok: true as const, data: { table, rows: [...rowsFor(table), { id: 99, values }] } })),
@@ -98,6 +98,33 @@ describe('Settings screen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save new row' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('SourceField, TargetField, Remarks cannot be empty.');
+    expect(api.create).not.toHaveBeenCalled();
+  });
+
+  it('saves an Email_Group row with a blank CC, since that column is optional', async () => {
+    const api = stubApi();
+    render(<Settings api={api} />);
+    await screen.findByText('COUNTERPARTY');
+    fireEvent.change(screen.getByLabelText('Settings table'), { target: { value: 'email-group' } });
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith('email-group'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add row' }));
+    fireEvent.change(screen.getByLabelText('Email Group Name'), { target: { value: 'Test desk' } });
+    fireEvent.change(screen.getByLabelText(/^To/), { target: { value: 'a@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new row' }));
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith('email-group', { groupName: 'Test desk', to: 'a@example.com', cc: '', remarks: '' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('still refuses a blank required column on a table that has optional ones', async () => {
+    const api = stubApi();
+    render(<Settings api={api} />);
+    await screen.findByText('COUNTERPARTY');
+    fireEvent.change(screen.getByLabelText('Settings table'), { target: { value: 'email-group' } });
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith('email-group'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add row' }));
+    fireEvent.change(screen.getByLabelText('Email Group Name'), { target: { value: 'Test desk' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save new row' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('To cannot be empty.');
     expect(api.create).not.toHaveBeenCalled();
   });
 

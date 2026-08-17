@@ -4,14 +4,14 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { SqliteDatabase, type Migration } from '../../src/main/adapters/sqlite/database.js';
 import { SettingsRowNotFoundError, SettingsService, SettingsValuesInvalidError } from '../../src/main/modules/settings/settings-service.js';
-import { dataEnrichmentDefaults, settingsSeedVersion, sourceHeaderMappingDefaults } from '../../fixtures/settings-defaults.js';
+import { autoValidationDefaults, dataEnrichmentDefaults, emailGroupDefaults, settingsSeedBatches, sourceHeaderMappingDefaults } from '../../fixtures/settings-defaults.js';
 
 const directories: string[] = [];
 afterAll(() => { for (const directory of directories) rmSync(directory, { recursive: true, force: true }); });
 
 const migrationFiles = [
   '001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql',
-  '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql', '008-settings-tables.sql'
+  '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql', '008-settings-tables.sql', '009-settings-email-validation.sql'
 ];
 
 function migrations(): Migration[] {
@@ -55,7 +55,7 @@ describe('settings reference tables', () => {
     settings.seed();
 
     const rows = settings.list('data-enrichment');
-    expect(database.hasSeed(settingsSeedVersion)).toBe(true);
+    expect(settingsSeedBatches.every((batch) => database.hasSeed(batch.version))).toBe(true);
     expect(rows).toHaveLength(dataEnrichmentDefaults.length - 1);
     expect(rows[0]!.values.target).toBe('TRADITION ASIA');
     database.close();
@@ -99,6 +99,62 @@ describe('settings reference tables', () => {
     const { database, settings } = setup();
     const rows = settings.create('data-enrichment', { provider: ' ops@example.com ', field: ' BUY/SELL ', source: ' X ', target: ' BUY ' });
     expect(rows.at(-1)!.values).toEqual({ provider: 'ops@example.com', field: 'BUY/SELL', source: 'X', target: 'BUY' });
+    database.close();
+  });
+
+  it('seeds the email groups, keeping a recipient list whole and a blank CC blank', () => {
+    const { database, settings } = setup();
+    const groups = settings.list('email-group');
+    expect(groups.map((row) => row.values)).toEqual(emailGroupDefaults.map((row) => row.values));
+    expect(groups[0]!.values.groupName).toBe('GFI / BGC / MINTPARTNERS');
+    expect(groups[0]!.values.to).toContain('BondsDomestic@bgcpartners.com');
+    expect(groups[0]!.values.to).toContain('bondssupport2@aurel-bgc.com');
+    expect(groups[0]!.values.remarks).toBe('(0207 422 1176 or 0207 422 1354)');
+    // The ICAP group is addressed with nobody on copy.
+    expect(groups[1]!.values.groupName).toBe('ICAP / GARSEC');
+    expect(groups[1]!.values.cc).toBe('');
+    database.close();
+  });
+
+  it('seeds the auto-validation criteria', () => {
+    const { database, settings } = setup();
+    const rows = settings.list('auto-validation');
+    expect(rows.map((row) => row.values)).toEqual(autoValidationDefaults.map((row) => row.values));
+    expect(rows[0]!.values).toEqual({ broker: 'BGC', criteria: 'CACIB_TRADER in (ELIAS,ARAS, DARASY KOL)', remarks: 'Not MO CDT trader', validated: 'Yes' });
+    database.close();
+  });
+
+  it('accepts a blank optional column but still refuses a blank required one', () => {
+    const { database, settings } = setup();
+    const rows = settings.create('email-group', { groupName: 'Desk', to: 'desk@example.com', cc: '', remarks: '' });
+    expect(rows.at(-1)!.values).toEqual({ groupName: 'Desk', to: 'desk@example.com', cc: '', remarks: '' });
+    expect(() => settings.create('email-group', { groupName: 'Desk', to: '  ', cc: '', remarks: '' })).toThrow(/To cannot be empty/);
+    database.close();
+  });
+
+  it('stores a recipient list longer than a single-line field without truncating it', () => {
+    const { database, settings } = setup();
+    const to = Array.from({ length: 12 }, (_, index) => `settlements${index}@example.com`).join('; ');
+    const rows = settings.create('email-group', { groupName: 'Long desk', to, cc: '', remarks: '' });
+    expect(rows.at(-1)!.values.to).toBe(to);
+    expect(to.length).toBeGreaterThan(200);
+    database.close();
+  });
+
+  it('applies a later seed batch to a database that only recorded the earlier one', () => {
+    const { database, settings } = setup();
+    // Stand in for an install created before the email and validation tables existed.
+    database.db.exec('DELETE FROM email_group');
+    database.db.exec('DELETE FROM auto_validation');
+    database.db.exec("DELETE FROM seed_versions WHERE version = 'settings-v2'");
+    const mappingsBefore = settings.list('source-header-mapping').length;
+
+    settings.seed();
+
+    expect(settings.list('email-group')).toHaveLength(emailGroupDefaults.length);
+    expect(settings.list('auto-validation')).toHaveLength(autoValidationDefaults.length);
+    // The earlier batch is not replayed on top of what is already there.
+    expect(settings.list('source-header-mapping')).toHaveLength(mappingsBefore);
     database.close();
   });
 });
