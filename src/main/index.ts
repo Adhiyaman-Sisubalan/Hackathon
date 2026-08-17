@@ -10,6 +10,8 @@ import { initialSeed } from '../../fixtures/initial-seed.js';
 import { reconciliationScenarios } from '../../fixtures/reconciliation-scenarios.js';
 import { isTrustedRendererSender, registerDashboardHandlers, type DashboardQuery } from './ipc/dashboard.js';
 import { registerReconciliationHandlers, type ReconciliationCommand } from './ipc/reconciliation.js';
+import { registerSettingsHandlers, type SettingsCommand } from './ipc/settings.js';
+import { SettingsService } from './modules/settings/settings-service.js';
 import type { Migration } from './adapters/sqlite/database.js';
 import { createReportWorker } from './workers/report-worker-client.js';
 
@@ -21,7 +23,7 @@ const userDataDirectory = process.env.RECONCILIATION_USER_DATA;
 if (userDataDirectory) app.setPath('userData', userDataDirectory);
 
 function migrations(): Migration[] {
-  return ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql'].map((filename, index) => {
+  return ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql', '008-settings-tables.sql'].map((filename, index) => {
     const locations = [path.join(process.resourcesPath, 'migrations', filename), path.join(app.getAppPath(), 'migrations', filename), path.resolve(currentDirectory, '../../migrations', filename)];
     const migration = locations.find(existsSync);
     if (!migration) throw new Error(`Database migration ${filename} is unavailable.`);
@@ -32,6 +34,7 @@ function migrations(): Migration[] {
 app.whenReady().then(async () => {
   let dashboard: DashboardQuery;
   let reconciliation: ReconciliationCommand;
+  let settings: SettingsCommand;
   try {
     const database = new SqliteDatabase({ path: path.join(app.getPath('userData'), 'reconciliation.sqlite') });
     const runs = new RunsService(database, initialSeed, {
@@ -41,9 +44,16 @@ app.whenReady().then(async () => {
         worker: createReportWorker(path.join(currentDirectory, 'report-worker.js'))
       }
     });
-    bootstrapApplication({ migrate: () => runs.migrate(migrations()), seed: () => runs.seed(), latestSummary: () => runs.latestSummary() });
+    const settingsService = new SettingsService(database);
+    bootstrapApplication({
+      migrate: () => runs.migrate(migrations()),
+      // Reference tables seed under their own version, after the run fixtures.
+      seed: () => { runs.seed(); settingsService.seed(); },
+      latestSummary: () => runs.latestSummary()
+    });
     dashboard = runs;
     reconciliation = runs;
+    settings = settingsService;
   } catch {
     dashboard = { latestSummary: () => { throw new Error('Dashboard bootstrap failed.'); } };
     reconciliation = {
@@ -56,9 +66,16 @@ app.whenReady().then(async () => {
       previewBrokerEmail: () => { throw new Error('Reconciliation bootstrap failed.'); }
       , saveVerifiedReport: async () => { throw new Error('Reconciliation bootstrap failed.'); }
     };
+    settings = {
+      list: () => { throw new Error('Settings bootstrap failed.'); },
+      create: () => { throw new Error('Settings bootstrap failed.'); },
+      update: () => { throw new Error('Settings bootstrap failed.'); },
+      remove: () => { throw new Error('Settings bootstrap failed.'); }
+    };
   }
   registerDashboardHandlers(ipcMain, dashboard, (event) => isTrustedRendererSender(event, rendererUrl));
   registerReconciliationHandlers(ipcMain, reconciliation, (event) => isTrustedRendererSender(event, rendererUrl));
+  registerSettingsHandlers(ipcMain, settings, (event) => isTrustedRendererSender(event, rendererUrl));
   await createSecureWindow(BrowserWindow, preloadPath, rendererUrl);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createSecureWindow(BrowserWindow, preloadPath, rendererUrl); });
 });

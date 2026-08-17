@@ -5,6 +5,7 @@ import { Results } from '../features/results/Results.js';
 import { reconciliationStatuses, type ReconciliationStatus } from '../../domain/reconciliation/reconciliation.js';
 import type { ReconciliationWorkspace } from '../../shared/contracts/reconciliation.js';
 import { RunHistory } from '../features/runs/RunHistory.js';
+import { Settings } from '../features/settings/Settings.js';
 import { applyThemeMode, persistThemeMode, themeModes, type ThemeMode } from './theme.js';
 import styles from './App.module.css';
 
@@ -17,6 +18,7 @@ const navIcons: Record<AppView, ReactNode> = {
   overview: <><rect x="2.5" y="2.5" width="5" height="5" rx="1.2" /><rect x="10.5" y="2.5" width="5" height="5" rx="1.2" /><rect x="2.5" y="10.5" width="5" height="5" rx="1.2" /><rect x="10.5" y="10.5" width="5" height="5" rx="1.2" /></>,
   runs: <><path d="M2.5 4.5h13M2.5 9h13M2.5 13.5h8" /></>,
   exceptions: <><path d="M9 2.5 16 15H2L9 2.5Z" /><path d="M9 7v3.5M9 12.6v.1" /></>,
+  settings: <><circle cx="9" cy="9" r="2.6" /><path d="M9 1.8v1.8M9 14.4v1.8M16.2 9h-1.8M3.6 9H1.8M14.1 3.9l-1.3 1.3M5.2 12.8l-1.3 1.3M14.1 14.1l-1.3-1.3M5.2 5.2 3.9 3.9" /></>,
   results: null
 };
 
@@ -68,6 +70,7 @@ export function App({ initialThemeMode = 'system' }: { initialThemeMode?: ThemeM
         {view === 'overview' && <Dashboard onCompleted={(completed) => showWorkspace(completed)} />}
         {view === 'runs' && <RunHistory destination="runs" onOpened={showWorkspace} onStale={() => setWorkspace(undefined)} onOverview={() => setView('overview')} />}
         {view === 'exceptions' && <RunHistory destination="exceptions" onOpened={showWorkspace} onStale={() => setWorkspace(undefined)} onOverview={() => setView('overview')} />}
+        {view === 'settings' && <Settings />}
         {view === 'results' && workspace && <Results key={`${workspace.runId}:${resultFilters.join(',')}`} workspace={workspace} initialSelected={resultFilters} onWorkspaceChanged={setWorkspace} />}
       </main>
     </div>

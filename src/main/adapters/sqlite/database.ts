@@ -3,6 +3,22 @@ import type { DashboardSummary } from '../../../shared/contracts/dashboard.js';
 import { anomalyContextFor, statusCountsFor, type AnomalyThresholds, type ReconciliationStatusCounts } from '../../../domain/metrics/reconciliation-metrics.js';
 import { BrokerEmailDraftSchema, ReconciliationRunSummarySchema, ReconciliationWorkspaceSchema, RunReportV1Schema, type BrokerEmailDraft, type ReconciliationRunSummary, type ReconciliationWorkspace, type RunReportV1 } from '../../../shared/contracts/reconciliation.js';
 import type { Trade } from '../../../domain/reconciliation/reconciliation.js';
+import type { SettingsRow, SettingsTableId, SettingsValues } from '../../../shared/contracts/settings.js';
+
+/**
+ * The only place a settings table or column id becomes a SQL identifier. Everything the
+ * renderer sends is looked up here, so no caller-supplied string is ever interpolated.
+ */
+const settingsPhysicalTables: Record<SettingsTableId, { readonly table: string; readonly columns: readonly { id: string; sql: string }[] }> = {
+  'source-header-mapping': {
+    table: 'source_header_mapping',
+    columns: [{ id: 'provider', sql: 'provider' }, { id: 'sourceField', sql: 'source_field' }, { id: 'targetField', sql: 'target_field' }, { id: 'remarks', sql: 'remarks' }]
+  },
+  'data-enrichment': {
+    table: 'data_enrichment',
+    columns: [{ id: 'provider', sql: 'provider' }, { id: 'field', sql: 'field' }, { id: 'source', sql: 'source_value' }, { id: 'target', sql: 'target_value' }]
+  }
+};
 
 export interface DatabaseOptions { path: string; }
 export interface Migration { version: number; sql: string; }
@@ -91,6 +107,44 @@ export class SqliteDatabase {
 
   recordSeed(version: string): void {
     this.db.prepare('INSERT INTO seed_versions (version) VALUES (?)').run(version);
+  }
+
+  listSettingsRows(table: SettingsTableId): readonly SettingsRow[] {
+    const physical = settingsPhysicalTables[table];
+    const selected = physical.columns.map((column) => `${column.sql} AS ${column.id}`).join(', ');
+    const rows = this.db.prepare(`SELECT id, ${selected} FROM ${physical.table} ORDER BY id ASC`).all() as unknown as Record<string, string | number>[];
+    return rows.map((row) => ({
+      id: Number(row.id),
+      values: Object.fromEntries(physical.columns.map((column) => [column.id, String(row[column.id] ?? '')]))
+    }));
+  }
+
+  createSettingsRow(table: SettingsTableId, values: SettingsValues): number {
+    const physical = settingsPhysicalTables[table];
+    const names = physical.columns.map((column) => column.sql).join(', ');
+    const placeholders = physical.columns.map(() => '?').join(', ');
+    const statement = this.db.prepare(`INSERT INTO ${physical.table} (${names}) VALUES (${placeholders})`);
+    const inserted = statement.run(...physical.columns.map((column) => values[column.id] ?? ''));
+    return Number(inserted.lastInsertRowid);
+  }
+
+  /** Returns false when the row is already gone, so main can answer not-found rather than silently succeeding. */
+  updateSettingsRow(table: SettingsTableId, id: number, values: SettingsValues): boolean {
+    const physical = settingsPhysicalTables[table];
+    const assignments = physical.columns.map((column) => `${column.sql} = ?`).join(', ');
+    const statement = this.db.prepare(`UPDATE ${physical.table} SET ${assignments} WHERE id = ?`);
+    return statement.run(...physical.columns.map((column) => values[column.id] ?? ''), id).changes > 0;
+  }
+
+  deleteSettingsRow(table: SettingsTableId, id: number): boolean {
+    const physical = settingsPhysicalTables[table];
+    return this.db.prepare(`DELETE FROM ${physical.table} WHERE id = ?`).run(id).changes > 0;
+  }
+
+  settingsRowCount(table: SettingsTableId): number {
+    const physical = settingsPhysicalTables[table];
+    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${physical.table}`).get() as { count: number };
+    return row.count;
   }
 
   replaceSeededHistory(seedVersion: string, histories: readonly SeededRunHistory[]): void {

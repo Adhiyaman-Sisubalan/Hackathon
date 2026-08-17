@@ -1,0 +1,62 @@
+.settings { display: grid; gap: var(--space-5); max-width: 72rem; }
+
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.eyebrow { margin: 0 0 var(--space-1); color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.header h1 { margin: 0; font-size: 1.75rem; font-weight: 650; letter-spacing: -.02em; }
+.header h1:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+
+/* The table picker is the screen's primary control and stays above the data it scopes. */
+.chooser { display: grid; gap: var(--space-2); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.chooser label { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.select { justify-self: start; min-width: 18rem; padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; font-weight: 600; }
+.chooserNote { margin: 0; color: var(--text-muted); font-size: .8125rem; }
+
+.card { display: grid; gap: var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.cardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.cardHead h2 { margin: 0 0 var(--space-1); font-size: 1.0625rem; font-weight: 650; }
+.count { margin: 0; color: var(--text-muted); font-size: .8125rem; }
+
+.primary { padding: var(--space-2) var(--space-4); color: var(--accent-text); background: var(--accent); border: 1px solid transparent; border-radius: var(--radius-control); font-weight: 650; }
+.primary:hover:enabled { background: var(--accent-hover); }
+.primary:disabled { background: var(--border-strong); color: var(--surface); }
+.secondary { padding: var(--space-1) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font-size: .8125rem; font-weight: 600; }
+.secondary:hover:enabled { background: var(--surface-hover); }
+.secondary:disabled { color: var(--text-subtle); border-color: var(--border); }
+.danger { padding: var(--space-1) var(--space-3); color: var(--accent-text); background: var(--danger); border: 1px solid transparent; border-radius: var(--radius-control); font-size: .8125rem; font-weight: 650; }
+.danger:disabled { opacity: .6; }
+
+/* The editor sits above the table so the row being changed stays in view behind it. */
+.form { display: grid; gap: var(--space-3); padding: var(--space-4); background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.form h3 { margin: 0; font-size: .9375rem; font-weight: 650; }
+.form h3:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); }
+.field { display: grid; gap: var(--space-1); }
+.field span { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.field input { padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; }
+.formActions { display: flex; align-items: center; gap: var(--space-2); }
+
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.table caption { text-align: left; }
+.table th, .table td { padding: var(--space-2) var(--space-3); text-align: left; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.table th { color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-bottom-color: var(--border); }
+.table tbody tr:hover { background: var(--surface-hover); }
+.table tbody tr[data-editing] { background: var(--accent-soft); }
+.actionsHead, .actions { text-align: right; }
+.rowActions, .confirm { display: inline-flex; align-items: center; gap: var(--space-2); }
+.confirmText { color: var(--danger); font-weight: 650; }
+
+.loading { margin: 0; color: var(--text-muted); }
+.empty { padding: var(--space-5); text-align: center; color: var(--text-muted); background: var(--surface-sunken); border: 1px dashed var(--border-strong); border-radius: var(--radius-card); }
+.empty p { margin: 0; }
+
+.error { display: grid; gap: var(--space-2); justify-items: start; padding: var(--space-3) var(--space-4); color: var(--text); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); border-radius: var(--radius-card); }
+.error p { margin: 0; }
+
+.visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (forced-colors: active) {
+  .table tbody tr[data-editing] { background: Highlight; color: HighlightText; }
+  .error { border-color: CanvasText; }
+  .empty { border-color: CanvasText; }
+}
