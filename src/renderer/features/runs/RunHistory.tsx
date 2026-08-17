@@ -54,7 +54,8 @@ export function RunHistory({ destination, api, onOpened, onStale, onOverview }: 
   useEffect(() => { void loadHistory(); }, [destination, runsApi]);
   useEffect(() => { if (error) retryRef.current?.focus(); }, [error]);
 
-  const title = destination === 'runs' ? 'Reconciliation Runs' : 'Exceptions';
+  // Matches the navigation label, so arriving from the menu never lands on a differently named page.
+  const title = destination === 'runs' ? 'Reconciliation Runs' : 'Result';
   const empty = destination === 'runs'
     ? 'No completed reconciliation runs yet. Open Overview to create one.'
     : 'No completed reconciliation runs are available. Open Overview to create one.';

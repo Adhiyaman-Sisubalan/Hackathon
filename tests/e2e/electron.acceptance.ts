@@ -123,7 +123,9 @@ async function runAcceptance(): Promise<void> {
     await page.getByRole('button', { name: 'Select BRK-202' }).click();
     assert.equal(await page.getByRole('textbox', { name: 'Comment' }).inputValue(), 'Awaiting broker confirmation.');
 
-    const exceptions = page.getByRole('button', { name: 'Exceptions' });
+    // Exact: accessible names match as substrings by default, and the workspace this
+    // lands on has its own "Result"-prefixed controls.
+    const exceptions = page.getByRole('button', { name: 'Result', exact: true });
     await exceptions.focus();
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Results' }).waitFor();
@@ -136,7 +138,7 @@ async function runAcceptance(): Promise<void> {
     assert.equal(await overview.getAttribute('aria-current'), 'page');
     await page.getByLabel('Reconciliation summary').waitFor();
     await page.getByText(/five-run baseline 11.0%/).waitFor();
-    console.log('Playwright Electron acceptance passed: persisted summary, review state, verified no-clobber workbook reports, seeded anomaly context, Exceptions, and keyboard navigation.');
+    console.log('Playwright Electron acceptance passed: persisted summary, review state, verified no-clobber workbook reports, seeded anomaly context, the Result destination, and keyboard navigation.');
   } finally {
     await application?.close();
     rmSync(userData, { recursive: true, force: true });
