@@ -2,9 +2,9 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 
 const config: ForgeConfig = {
-  // productName is the user-facing app name and names the packaged bundle;
+  // This name is the user-facing app name and names the packaged bundle;
   // package.json `name` stays the npm identifier.
-  packagerConfig: { name: 'ReconFlow', asar: true, extraResource: ['migrations'] },
+  packagerConfig: { name: 'Forseti', asar: true, extraResource: ['migrations'] },
   rebuildConfig: {},
   makers: [],
   plugins: [

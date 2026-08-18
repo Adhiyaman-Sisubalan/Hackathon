@@ -4,11 +4,14 @@
 .shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; overflow: hidden; background: var(--canvas); color: var(--text); }
 
 .sidebar { display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-5); min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-3) var(--space-4); background: var(--surface); border-right: 1px solid var(--border); }
-.brand { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); }
-.mark { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-control); background: var(--accent); color: var(--accent-text); font-size: .75rem; font-weight: 700; letter-spacing: -.02em; }
+/* Top-aligned: the tagline wraps to two lines, and centring would drop the mark below
+   the wordmark it belongs beside. */
+.brand { display: flex; align-items: flex-start; gap: var(--space-2); padding: 0 var(--space-2); }
+/* Sized for the single-letter mark; the tighter tracking was there to fit two. */
+.mark { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-control); background: var(--accent); color: var(--accent-text); font-size: .875rem; font-weight: 700; }
 .brandText { display: grid; gap: 1px; min-width: 0; }
-.brandName { font-size: .9375rem; font-weight: 650; letter-spacing: -.01em; }
-.brandTagline { color: var(--text-subtle); font-size: .625rem; font-weight: 500; letter-spacing: .015em; }
+.brandName { font-size: .9375rem; font-weight: 650; line-height: 1.25rem; letter-spacing: -.01em; }
+.brandTagline { color: var(--text-subtle); font-size: .625rem; font-weight: 500; line-height: 1.15; letter-spacing: .015em; text-wrap: balance; }
 
 .navigation { display: grid; align-content: start; gap: 2px; }
 .navLabel { margin: 0 0 var(--space-1); padding: 0 var(--space-2); color: var(--text-subtle); font-size: .6875rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }

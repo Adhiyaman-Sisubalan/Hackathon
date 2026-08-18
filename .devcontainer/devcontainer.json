@@ -1,5 +1,5 @@
 {
-  "name": "ReconFlow desktop",
+  "name": "Forseti desktop",
   // Node 24 is only published without the "1-" family prefix (1-* stops at Node 22),
   // and package.json pins Node 24 because the tests use node:sqlite.
   "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",

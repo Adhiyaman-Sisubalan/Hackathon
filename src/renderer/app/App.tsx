@@ -44,10 +44,10 @@ export function App({ initialThemeMode = 'system' }: { initialThemeMode?: ThemeM
   return <div className={styles.shell}>
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
-        <span className={styles.mark} aria-hidden="true">RF</span>
+        <span className={styles.mark} aria-hidden="true">F</span>
         <span className={styles.brandText}>
-          <span className={styles.brandName}>ReconFlow</span>
-          <span className={styles.brandTagline}>Automate. Reconcile. Resolve.</span>
+          <span className={styles.brandName}>Forseti</span>
+          <span className={styles.brandTagline}>Bringing Every Trade into Agreement</span>
         </span>
       </div>
       <nav aria-label="Primary" className={styles.navigation}>
@@ -61,7 +61,7 @@ export function App({ initialThemeMode = 'system' }: { initialThemeMode?: ThemeM
     </aside>
     <div className={styles.frame}>
       <header className={styles.topbar}>
-        <p className={styles.crumbs}><span className={styles.crumbRoot}>ReconFlow</span><span className={styles.crumbSeparator} aria-hidden="true">/</span>{currentLabel}</p>
+        <p className={styles.crumbs}><span className={styles.crumbRoot}>Forseti</span><span className={styles.crumbSeparator} aria-hidden="true">/</span>{currentLabel}</p>
         <div className={styles.topbarMeta}>
           <p className={styles.environment}><span className={styles.environmentDot} aria-hidden="true" />Local demo data</p>
           <div className={styles.themeToggle} role="group" aria-label="Theme">

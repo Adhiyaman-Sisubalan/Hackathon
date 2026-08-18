@@ -8,7 +8,7 @@ import ExcelJS from 'exceljs';
 const userData = mkdtempSync(path.join(tmpdir(), 'reconciliation-e2e-'));
 const reportOutput = path.join(userData, 'mock-output');
 // Follows forge's packagerConfig.name, which names the packaged bundle.
-const packagedExecutable = path.resolve('out/ReconFlow-darwin-arm64/ReconFlow.app/Contents/MacOS/ReconFlow');
+const packagedExecutable = path.resolve('out/Forseti-darwin-arm64/Forseti.app/Contents/MacOS/Forseti');
 
 async function assertReportWorkbook(filename: string, runId: string): Promise<void> {
   const workbook = new ExcelJS.Workbook();
