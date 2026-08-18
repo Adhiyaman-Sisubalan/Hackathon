@@ -35,11 +35,10 @@ describe('RunTrend', () => {
 
   it('reads each rate and the review count into the table view', () => {
     render(<RunTrend runs={[run('11111111-1111-4111-8111-111111111111', '2026-08-15', '2026-08-15T12:00:00.000Z', 2, 6, 1, 2)]} />);
-    const row = rowFor('15 Aug');
-    expect(within(row).getByText('33.3%')).toBeTruthy();
-    expect(within(row).getByText('66.7%')).toBeTruthy();
-    expect(within(row).getByText('50.0%')).toBeTruthy();
-    expect(within(row).getByText('1 of 2')).toBeTruthy();
+    // 2 matched, 2 mismatched, 2 missing-from-OT/MUREX of 6: the mismatched series counts
+    // only the Mismatched status, so it reads 33.3% rather than the 66.7% unresolved share.
+    const cells = [...rowFor('15 Aug').querySelectorAll('td')].map((cell) => cell.textContent);
+    expect(cells).toEqual(['33.3%', '33.3%', '50.0%', '1 of 2']);
   });
 
   it('keeps only the newest run for a date that was reconciled more than once', () => {

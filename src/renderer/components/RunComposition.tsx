@@ -4,7 +4,7 @@ import type { ReconciliationRunSummary, ReconciliationStatusCounts, Reconciliati
 import styles from './RunComposition.module.css';
 
 const labels: Record<ReconciliationStatus, string> = {
-  matched: 'Matched', unmatched: 'Unmatched', 'missing-from-broker': 'Missing from Broker', 'missing-from-ot-murex': 'Missing from OT/MUREX'
+  matched: 'Matched', unmatched: 'Mismatched', 'missing-from-broker': 'Missing from Broker', 'missing-from-ot-murex': 'Missing from OT/MUREX'
 };
 
 /** The same marker glyphs the Status pills use, so the chart never leans on colour alone. */

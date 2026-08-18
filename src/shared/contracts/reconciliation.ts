@@ -76,7 +76,7 @@ export const ReportSaveResultSchema = result(z.object({ destination: z.string().
 export const ReportSheetNamesSchema = z.tuple([
   z.literal('Summary'),
   z.literal('Matched'),
-  z.literal('Unmatched'),
+  z.literal('Mismatched'),
   z.literal('Missing from Broker'),
   z.literal('Missing from OT-MUREX')
 ]).readonly();

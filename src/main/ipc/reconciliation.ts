@@ -51,7 +51,7 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       return ResultReviewResultSchema.parse({ ok: true, data: { workspace: command.reviewUnmatchedResult(request.data.runId, request.data.resultId) } });
     } catch (error) {
       if (error instanceof ResultNotFoundError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
-      if (error instanceof ResultNotEligibleError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only unmatched results can be reviewed.', retryable: false, field: 'resultId' } });
+      if (error instanceof ResultNotEligibleError) return ResultReviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only mismatched results can be reviewed.', retryable: false, field: 'resultId' } });
       return ResultReviewResultSchema.parse({ ok: false, error: { code: 'PERSISTENCE_FAILED', message: 'The result review could not be saved. Please retry.', retryable: true } });
     }
   });
@@ -93,7 +93,7 @@ export function registerReconciliationHandlers(ipcMain: Pick<IpcMain, 'handle'>,
       return BrokerPreviewResultSchema.parse({ ok: true, data: { draft: command.previewBrokerEmail(request.data.runId, request.data.resultId) } });
     } catch (error) {
       if (error instanceof ResultNotFoundError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
-      if (error instanceof BrokerPreviewNotEligibleError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed unmatched results can be previewed.', retryable: false, field: 'resultId' } });
+      if (error instanceof BrokerPreviewNotEligibleError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed mismatched results can be previewed.', retryable: false, field: 'resultId' } });
       if (error instanceof BrokerUnavailableError) return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Broker details are unavailable for this result.', retryable: false, field: 'resultId' } });
       return BrokerPreviewResultSchema.parse({ ok: false, error: { code: 'QUERY_FAILED', message: 'The broker email draft could not be prepared. Please retry.', retryable: true } });
     }

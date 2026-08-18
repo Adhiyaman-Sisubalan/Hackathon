@@ -3,7 +3,7 @@ import styles from './StatusText.module.css';
 
 const labels: Record<ReconciliationStatus, string> = {
   matched: 'Matched',
-  unmatched: 'Unmatched',
+  unmatched: 'Mismatched',
   'missing-from-broker': 'Missing from Broker',
   'missing-from-ot-murex': 'Missing from OT/MUREX'
 };

@@ -73,7 +73,7 @@ describe('reconciliation IPC boundary', () => {
     const handler = handlers.get(ReconciliationChannels.reviewResult)!;
     expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'missing' })).toEqual({ ok: false, error: { code: 'RESULT_NOT_FOUND', message: 'This result is no longer available.', retryable: false } });
     register(() => { throw new ResultNotEligibleError(); });
-    expect(await handlers.get(ReconciliationChannels.reviewResult)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only unmatched results can be reviewed.', retryable: false, field: 'resultId' } });
+    expect(await handlers.get(ReconciliationChannels.reviewResult)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only mismatched results can be reviewed.', retryable: false, field: 'resultId' } });
     registerReconciliationHandlers({ handle: vi.fn((channel, next) => { handlers.set(channel, next); }) }, { run: () => { throw new Error('unused'); }, reviewUnmatchedResult: () => { throw new Error('must not execute'); } }, () => false);
     expect(await handlers.get(ReconciliationChannels.reviewResult)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'blocked' })).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST', retryable: false } });
   });
@@ -116,7 +116,7 @@ describe('reconciliation IPC boundary', () => {
     expect(previewBrokerEmail).toHaveBeenCalledWith(runId, 'logical-result');
     expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'logical-result', recipient: 'tampered@example.com' })).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
     registerReconciliationHandlers({ handle: vi.fn((channel, next) => { handlers.set(channel, next); }) }, { run: () => { throw new Error('unused'); }, previewBrokerEmail: () => { throw new BrokerPreviewNotEligibleError(); } }, () => true);
-    expect(await handlers.get(ReconciliationChannels.previewBroker)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed unmatched results can be previewed.', retryable: false, field: 'resultId' } });
+    expect(await handlers.get(ReconciliationChannels.previewBroker)!({ sender: { send: vi.fn() } }, { version: 1, runId, resultId: 'matched' })).toEqual({ ok: false, error: { code: 'INVALID_REQUEST', message: 'Only broker-backed mismatched results can be previewed.', retryable: false, field: 'resultId' } });
   });
 
   it('exposes only the sender-validated report identity command and preserves the main review gate', async () => {
@@ -129,6 +129,6 @@ describe('reconciliation IPC boundary', () => {
     expect(saveVerifiedReport).toHaveBeenCalledWith(runId);
     expect(await handler({ sender: { send: vi.fn() } }, { version: 1, runId, destination: '/forged.xlsx' })).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST', retryable: false } });
     registerReconciliationHandlers({ handle: vi.fn((channel, next) => { handlers.set(channel, next); }) }, { run: () => { throw new Error('unused'); }, saveVerifiedReport: async () => { throw new ReportNotEligibleError(2); } }, () => true);
-    expect(await handlers.get(ReconciliationChannels.saveReport)!({ sender: { send: vi.fn() } }, { version: 1, runId })).toEqual({ ok: false, error: { code: 'REPORT_INELIGIBLE', message: '2 unmatched results remain to review before saving the verified report.', retryable: false } });
+    expect(await handlers.get(ReconciliationChannels.saveReport)!({ sender: { send: vi.fn() } }, { version: 1, runId })).toEqual({ ok: false, error: { code: 'REPORT_INELIGIBLE', message: '2 mismatched results remain to review before saving the verified report.', retryable: false } });
   });
 });

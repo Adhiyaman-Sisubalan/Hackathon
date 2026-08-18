@@ -35,7 +35,7 @@ describe('reopened report workbook validation', () => {
     const sheets = reportSheetsFor(snapshot);
     expect(() => validateReopenedWorkbook(workbook, summaryRows, sheets)).not.toThrow();
 
-    workbook.getWorksheet('Unmatched')!.getRow(3).getCell(13).value = 'corrupted-price';
-    expect(() => validateReopenedWorkbook(workbook, summaryRows, sheets)).toThrow('Workbook Unmatched evidence does not match the report snapshot.');
+    workbook.getWorksheet('Mismatched')!.getRow(3).getCell(13).value = 'corrupted-price';
+    expect(() => validateReopenedWorkbook(workbook, summaryRows, sheets)).toThrow('Workbook Mismatched evidence does not match the report snapshot.');
   });
 });

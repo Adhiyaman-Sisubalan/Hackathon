@@ -13,7 +13,7 @@ import { createReportWorker, type ReportWorker } from '../../src/main/workers/re
 const directories: string[] = [];
 const migrationNames = ['001-initial.sql', '002-runs-and-results.sql', '003-summary-history.sql', '004-result-review.sql', '005-result-comment.sql', '006-broker-contact.sql', '007-result-mismatch-reason.sql'];
 const migrations = migrationNames.map((filename, index) => ({ version: index + 1, sql: readFileSync(`migrations/${filename}`, 'utf8') }));
-const reportSheetNames = ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
+const reportSheetNames = ['Summary', 'Matched', 'Mismatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
 function setup(registry: ScenarioRegistry = reconciliationScenarios) {
@@ -142,7 +142,7 @@ describe('persisted reconciliation runs', () => {
     expect(reviewed.results.find((result) => result.id === unmatched.id)?.reviewed).toBe(true);
     expect(reviewed.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
     expect(runs.reviewUnmatchedResult(first.runId, unmatched.id).reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
-    expect(() => runs.reviewUnmatchedResult(first.runId, missing.id)).toThrow('Only unmatched results can be reviewed.');
+    expect(() => runs.reviewUnmatchedResult(first.runId, missing.id)).toThrow('Only mismatched results can be reviewed.');
     expect(runs.workspaceForRun(first.runId)?.reviewProgress).toEqual({ reviewedUnmatched: 1, totalUnmatched: 2 });
     const rerun = runs.run('2026-08-15');
     expect(rerun.reviewProgress).toEqual({ reviewedUnmatched: 0, totalUnmatched: 2 });
@@ -215,8 +215,8 @@ describe('persisted reconciliation runs', () => {
     runs.saveResultComment(run.runId, atlasRows[0]!.id, 'Confirm booking date.');
     runs.saveResultComment(run.runId, atlasRows[1]!.id, 'Confirm amount.');
     const draft = runs.previewBrokerEmail(run.runId, atlasRows[0]!.id);
-    expect(draft).toMatchObject({ status: 'Draft', recipient: 'operations@atlas-securities.example', subject: 'Follow-up: unmatched trades for Atlas Securities' });
-    expect(draft.body).toContain('Please review the unmatched trades');
+    expect(draft).toMatchObject({ status: 'Draft', recipient: 'operations@atlas-securities.example', subject: 'Follow-up: mismatched trades for Atlas Securities' });
+    expect(draft.body).toContain('Please review the mismatched trades');
     expect(draft.rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ tradeId: 'BRK-202', comment: 'Confirm booking date.' }),
       expect.objectContaining({ tradeId: 'BRK-203', comment: 'Confirm amount.' })
@@ -397,7 +397,7 @@ describe('persisted reconciliation runs', () => {
     const cases: ReadonlyArray<readonly [string, ReportWorker]> = [
       ['malformed', { generate: async (_snapshot, temporaryPath) => {
         writeFileSync(temporaryPath, 'partial workbook');
-        return { temporaryPath, sheetNames: ['Summary', 'Wrong', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] } as never;
+        return { temporaryPath, sheetNames: ['Summary', 'Wrong', 'Mismatched', 'Missing from Broker', 'Missing from OT-MUREX'] } as never;
       } }],
       ['missing', { generate: async (_snapshot, temporaryPath) => ({ temporaryPath, sheetNames: reportSheetNames }) }],
       ['empty', { generate: async (_snapshot, temporaryPath) => {

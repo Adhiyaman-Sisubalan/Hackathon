@@ -7,8 +7,8 @@
 .legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: 0; list-style: none; }
 .legendItem { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: .75rem; font-weight: 600; }
 .swatch { width: .625rem; height: .625rem; border-radius: 2px; }
-.swatch[data-series='reconciliationRate'] { background: var(--chart-reconciliation-rate); }
-.swatch[data-series='unresolvedRate'] { background: var(--chart-unresolved-rate); }
+.swatch[data-series='matched'] { background: var(--chart-matched); }
+.swatch[data-series='mismatched'] { background: var(--chart-unmatched); }
 .swatch[data-series='reviewProgress'] { background: var(--chart-review-progress); }
 
 /* The axis column and the plot share one row so ticks line up with the gridlines they name.
@@ -32,8 +32,10 @@
 .bars { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 11rem; }
 .barSlot { display: flex; align-items: flex-end; flex: 1 1 0; max-width: 1.5rem; height: 100%; }
 .bar { display: block; width: 100%; border-radius: 4px 4px 0 0; }
-.bar[data-series='reconciliationRate'] { background: var(--chart-reconciliation-rate); }
-.bar[data-series='unresolvedRate'] { background: var(--chart-unresolved-rate); }
+/* The two status series share the composition chart's steps, so a status is one colour
+   across Overview. Only review progress needs a step of its own. */
+.bar[data-series='matched'] { background: var(--chart-matched); }
+.bar[data-series='mismatched'] { background: var(--chart-unmatched); }
 .bar[data-series='reviewProgress'] { background: var(--chart-review-progress); }
 
 .groupLabel { height: 1.75rem; margin: 0; padding-top: var(--space-2); color: var(--text-muted); font-size: .75rem; line-height: 1rem; font-variant-numeric: tabular-nums; text-align: center; }

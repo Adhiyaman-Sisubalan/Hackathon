@@ -16,7 +16,7 @@ export function SummaryStrip({ summary }: { summary: ReconciliationRunSummary | 
       <div className={styles.metric}><dt>Unresolved</dt><dd className={metrics.unresolved > 0 ? styles.warning : undefined}>{metrics.unresolved}</dd></div>
       <div className={styles.metric}><dt>Reconciliation rate</dt><dd>{formatPercentage(metrics.reconciliationRate)}</dd></div>
       <div className={styles.metric}><dt>Unresolved rate</dt><dd>{formatPercentage(metrics.unresolvedRate)}</dd></div>
-      {review && <div className={styles.metric}><dt>Unmatched reviewed</dt><dd>{review.reviewedUnmatched} / {review.totalUnmatched}<span className={styles.meter} aria-hidden="true"><span style={{ inlineSize: `${Math.round(reviewed * 100)}%` }} /></span></dd></div>}
+      {review && <div className={styles.metric}><dt>Mismatched reviewed</dt><dd>{review.reviewedUnmatched} / {review.totalUnmatched}<span className={styles.meter} aria-hidden="true"><span style={{ inlineSize: `${Math.round(reviewed * 100)}%` }} /></span></dd></div>}
     </dl>
     <AnomalyNotice summary={summary} />
   </section>;

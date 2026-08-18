@@ -28,7 +28,7 @@ describe('Results workspace table', () => {
     expect(screen.getAllByText('1,234.5')).not.toHaveLength(0);
     expect(screen.getAllByText('15 Aug 2026')).not.toHaveLength(0);
     expect(screen.getByText('OT/MUREX source')).toBeTruthy();
-    for (const status of ['Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT/MUREX']) expect(screen.getAllByText(status).length).toBeGreaterThan(0);
+    for (const status of ['Matched', 'Mismatched', 'Missing from Broker', 'Missing from OT/MUREX']) expect(screen.getAllByText(status).length).toBeGreaterThan(0);
     expect(screen.getByText(/Source values use Broker when present/)).toBeTruthy();
   });
 
@@ -363,7 +363,7 @@ describe('Results workspace table', () => {
     render(<Results workspace={workspace()} />);
     const save = screen.getByRole('button', { name: 'Save verified report' });
     expect((save as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('1 unmatched review remains.')).toBeTruthy();
+    expect(screen.getByText('1 mismatched review remains.')).toBeTruthy();
     fireEvent.click(save);
     expect(saveReport).not.toHaveBeenCalled();
   });
@@ -386,7 +386,7 @@ describe('Results workspace table', () => {
 
   it('uses the main-authoritative review gate after a stale eligible report request', async () => {
     const eligible = workspace(workspace().results.map((result) => result.status === 'unmatched' ? { ...result, reviewed: true } : result));
-    const saveReport = vi.fn(async () => ({ ok: false as const, error: { code: 'REPORT_INELIGIBLE' as const, message: '2 unmatched results remain to review before saving the verified report.', retryable: false } }));
+    const saveReport = vi.fn(async () => ({ ok: false as const, error: { code: 'REPORT_INELIGIBLE' as const, message: '2 mismatched results remain to review before saving the verified report.', retryable: false } }));
     window.reconciliation = { runs: { saveReport } } as never;
     render(<Results workspace={eligible} />);
 
@@ -394,8 +394,8 @@ describe('Results workspace table', () => {
     expect((save as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(save);
 
-    expect((await screen.findByRole('alert')).textContent).toContain('2 unmatched results remain');
-    expect(screen.getByText('2 unmatched reviews remain.')).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toContain('2 mismatched results remain');
+    expect(screen.getByText('2 mismatched reviews remain.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Save verified report' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: 'Retry saving report' })).toBeNull();
   });

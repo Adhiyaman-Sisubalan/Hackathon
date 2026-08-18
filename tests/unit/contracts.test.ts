@@ -37,8 +37,8 @@ describe('verified report contract', () => {
     expect(ReportSaveRequestSchema.safeParse({ version: 1, runId }).success).toBe(true);
     expect(ReportSaveRequestSchema.safeParse({ version: 1, runId, destination: '/forged.xlsx' }).success).toBe(false);
     expect(ReportSaveResultSchema.safeParse({ ok: true, data: { destination: '/mock/reconciliation.xlsx' } }).success).toBe(true);
-    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] }).success).toBe(true);
-    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Wrong'] }).success).toBe(false);
+    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Mismatched', 'Missing from Broker', 'Missing from OT-MUREX'] }).success).toBe(true);
+    expect(ReportWorkerReceiptSchema.safeParse({ temporaryPath: '/mock/report.tmp.xlsx', sheetNames: ['Summary', 'Matched', 'Mismatched', 'Missing from Broker', 'Wrong'] }).success).toBe(false);
     expect(RunReportV1Schema.safeParse({ version: 1, runId, asOfDate: '2026-08-15', completedAt: '2026-08-15T00:00:00.000Z', metrics: { total: 0, matched: 0, unresolved: 0, reconciliationRate: 0, unresolvedRate: 0 }, anomaly: { kind: 'insufficient-history', currentUnresolvedRate: 0, historyCount: 0, baselineUnresolvedRate: null }, reviewProgress: { reviewedUnmatched: 0, totalUnmatched: 0 }, results: [] }).success).toBe(true);
   });
 });

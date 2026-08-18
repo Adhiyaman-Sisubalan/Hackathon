@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import ExcelJS from 'exceljs';
 import { ReportWorkerReceiptSchema, RunReportV1Schema, type RunReportV1 } from '../../shared/contracts/reconciliation.js';
 
-export const reportSheetNames = ['Summary', 'Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
+export const reportSheetNames = ['Summary', 'Matched', 'Mismatched', 'Missing from Broker', 'Missing from OT-MUREX'] as const;
 export const resultHeaders = ['Result ID', 'Status', 'Reason', 'Reviewed', 'Comment', 'Broker trade ID', 'Broker ISIN', 'Broker buy/sell', 'Broker amount', 'Broker quantity', 'Broker currency', 'Broker settlement date', 'Broker price', 'OT-MUREX trade ID', 'OT-MUREX ISIN', 'OT-MUREX buy/sell', 'OT-MUREX amount', 'OT-MUREX quantity', 'OT-MUREX currency', 'OT-MUREX settlement date', 'OT-MUREX price'] as const;
 
 interface WorkerRequest { readonly snapshot: RunReportV1; readonly temporaryPath: string; }
@@ -28,7 +28,7 @@ export function summaryRowsFor(snapshot: RunReportV1): ReadonlyArray<readonly [s
     ['Run ID', snapshot.runId], ['As-of date', snapshot.asOfDate], ['Completed at', snapshot.completedAt],
     ['Total', snapshot.metrics.total], ['Matched', snapshot.metrics.matched], ['Unresolved', snapshot.metrics.unresolved],
     ['Reconciliation rate', snapshot.metrics.reconciliationRate], ['Unresolved rate', snapshot.metrics.unresolvedRate],
-    ['Unmatched reviewed', snapshot.reviewProgress.reviewedUnmatched], ['Unmatched total', snapshot.reviewProgress.totalUnmatched],
+    ['Mismatched reviewed', snapshot.reviewProgress.reviewedUnmatched], ['Mismatched total', snapshot.reviewProgress.totalUnmatched],
     ['Anomaly', snapshot.anomaly.kind], ['Anomaly history count', snapshot.anomaly.historyCount], ['Anomaly current unresolved rate', snapshot.anomaly.currentUnresolvedRate],
     ['Anomaly baseline unresolved rate', snapshot.anomaly.baselineUnresolvedRate ?? 'Not available']
   ];
@@ -37,7 +37,7 @@ export function summaryRowsFor(snapshot: RunReportV1): ReadonlyArray<readonly [s
 export function reportSheetsFor(snapshot: RunReportV1): ReadonlyArray<[typeof reportSheetNames[number], RunReportV1['results']]> {
   return [
     ['Matched', snapshot.results.filter((item) => item.status === 'matched')],
-    ['Unmatched', snapshot.results.filter((item) => item.status === 'unmatched')],
+    ['Mismatched', snapshot.results.filter((item) => item.status === 'unmatched')],
     ['Missing from Broker', snapshot.results.filter((item) => item.status === 'missing-from-broker')],
     ['Missing from OT-MUREX', snapshot.results.filter((item) => item.status === 'missing-from-ot-murex')]
   ];

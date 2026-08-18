@@ -2,15 +2,25 @@ import { formatPercentage } from '../../domain/metrics/reconciliation-metrics.js
 import type { ReconciliationRunSummary } from '../../shared/contracts/reconciliation.js';
 import styles from './RunTrend.module.css';
 
-type SeriesId = 'reconciliationRate' | 'unresolvedRate' | 'reviewProgress';
+type SeriesId = 'matched' | 'mismatched' | 'reviewProgress';
 
 const series: readonly { id: SeriesId; label: string; meaning: string }[] = [
-  { id: 'reconciliationRate', label: 'Reconciliation rate', meaning: 'Matched over total' },
-  { id: 'unresolvedRate', label: 'Unresolved rate', meaning: 'Unresolved over total' },
-  { id: 'reviewProgress', label: 'Unmatched reviewed', meaning: 'Reviewed over total unmatched' }
+  { id: 'matched', label: 'Matched', meaning: 'Matched over total' },
+  { id: 'mismatched', label: 'Mismatched', meaning: 'Mismatched over total' },
+  { id: 'reviewProgress', label: 'Mismatched reviewed', meaning: 'Reviewed over total mismatched' }
 ];
 
-/** A run with no unmatched Results has nothing left to review, which the rest of the app already treats as satisfied. */
+/**
+ * The Mismatched status alone, not every unresolved Result: records missing from one side
+ * are unresolved but are not mismatches, and plotting them here would not match the label.
+ * `reviewProgress.totalUnmatched` counts the same population and covers a summary that
+ * predates the persisted breakdown.
+ */
+function mismatchedCount(summary: ReconciliationRunSummary): number {
+  return summary.statusCounts?.unmatched ?? summary.reviewProgress?.totalUnmatched ?? 0;
+}
+
+/** A run with no mismatched Results has nothing left to review, which the rest of the app already treats as satisfied. */
 function reviewShare(summary: ReconciliationRunSummary): number {
   const progress = summary.reviewProgress;
   if (!progress || progress.totalUnmatched === 0) return 1;
@@ -46,7 +56,9 @@ export function RunTrend({ runs }: { runs: readonly ReconciliationRunSummary[] }
   const columns = latestRunPerDate(runs);
   if (columns.length === 0) return null;
   const valueFor = (summary: ReconciliationRunSummary, id: SeriesId) =>
-    id === 'reconciliationRate' ? summary.metrics.reconciliationRate : id === 'unresolvedRate' ? summary.metrics.unresolvedRate : reviewShare(summary);
+    id === 'matched' ? summary.metrics.reconciliationRate
+      : id === 'mismatched' ? (summary.metrics.total === 0 ? 0 : mismatchedCount(summary) / summary.metrics.total)
+      : reviewShare(summary);
 
   return <figure className={styles.figure}>
     <div className={styles.head}>
@@ -89,11 +101,11 @@ export function RunTrend({ runs }: { runs: readonly ReconciliationRunSummary[] }
     </div>
 
     <table className={styles.visuallyHidden}>
-      <caption>Reconciliation rate, unresolved rate, and unmatched reviewed by as-of date</caption>
+      <caption>Matched, mismatched, and mismatched reviewed by as-of date</caption>
       <thead><tr>
         <th scope="col">As-of date</th>
         {series.map((entry) => <th key={entry.id} scope="col">{entry.label}</th>)}
-        <th scope="col">Unmatched reviewed count</th>
+        <th scope="col">Mismatched reviewed count</th>
       </tr></thead>
       <tbody>{columns.map((summary) => <tr key={summary.runId}>
         <th scope="row">{formatDate(summary.asOfDate)}</th>

@@ -33,7 +33,7 @@ type ResultRow = {
 };
 
 const statusLabels: Record<ReconciliationStatus, string> = {
-  matched: 'Matched', unmatched: 'Unmatched', 'missing-from-broker': 'Missing from Broker', 'missing-from-ot-murex': 'Missing from OT/MUREX'
+  matched: 'Matched', unmatched: 'Mismatched', 'missing-from-broker': 'Missing from Broker', 'missing-from-ot-murex': 'Missing from OT/MUREX'
 };
 
 const statusFilter = constructFilterFn({
@@ -84,7 +84,7 @@ function decimalSort(rowA: { getValue: <T>(columnId: string) => T }, rowB: { get
 function valueOrDash(value: string | undefined): string { return value ?? '—'; }
 
 function outstandingReviewsFromReportError(message: string): number | undefined {
-  const match = /^(\d+)\s+unmatched\b/.exec(message);
+  const match = /^(\d+)\s+mismatched\b/.exec(message);
   return match ? Number(match[1]) : undefined;
 }
 
@@ -430,11 +430,11 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
         <div className={styles.reportCopy}>
           <h2>Verified report</h2>
           {outstandingReviews > 0
-            ? <p>Save is available after {outstandingReviews} unmatched {outstandingReviews === 1 ? 'result is' : 'results are'} reviewed.</p>
-            : <p>All unmatched Results are reviewed. The report will contain the authoritative saved Run.</p>}
+            ? <p>Save is available after {outstandingReviews} mismatched {outstandingReviews === 1 ? 'result is' : 'results are'} reviewed.</p>
+            : <p>All mismatched Results are reviewed. The report will contain the authoritative saved Run.</p>}
         </div>
         <div className={styles.reportAction}>
-          {outstandingReviews > 0 && <p id="report-review-gate" className={styles.gate}>{outstandingReviews} unmatched {outstandingReviews === 1 ? 'review remains' : 'reviews remain'}.</p>}
+          {outstandingReviews > 0 && <p id="report-review-gate" className={styles.gate}>{outstandingReviews} mismatched {outstandingReviews === 1 ? 'review remains' : 'reviews remain'}.</p>}
           <button type="button" className={styles.primary} onClick={() => void saveReport()} disabled={savingReport || outstandingReviews > 0} aria-describedby={outstandingReviews > 0 ? 'report-review-gate' : undefined}>{savingReport ? 'Saving verified report…' : 'Save verified report'}</button>
         </div>
       </div>
@@ -451,7 +451,7 @@ export function Results({ workspace, initialSelected = reconciliationStatuses, l
         {workspace.reviewProgress.totalUnmatched > 0 && <div className={styles.reviewBar}>
           <span className={styles.reviewLabel}>Review progress</span>
           <span className={styles.reviewTrack} aria-hidden="true"><span style={{ inlineSize: `${Math.round(reviewedShare * 100)}%` }} /></span>
-          <span className={styles.reviewCount}>{workspace.reviewProgress.reviewedUnmatched} of {workspace.reviewProgress.totalUnmatched} unmatched reviewed</span>
+          <span className={styles.reviewCount}>{workspace.reviewProgress.reviewedUnmatched} of {workspace.reviewProgress.totalUnmatched} mismatched reviewed</span>
         </div>}
         <div className={styles.feedback} aria-live="polite">
           <p className={styles.count}>Showing {visibleRows.length} results.{visibleRows.length === 0 && isAllResolved ? ' All results resolved.' : ''}</p>
@@ -630,7 +630,7 @@ function BrokerPreview({ result, draft, error, previewing, onPreview, onClose, h
     <p className={styles.emailBody}>{draft.body}</p>
     <div className={styles.draftTableWrap}>
       <table className={styles.draftTable}>
-        <caption>Unmatched trades for {draft.brokerName}</caption>
+        <caption>Mismatched trades for {draft.brokerName}</caption>
         <thead><tr><th scope="col">Trade ID</th><th scope="col">ISIN</th><th scope="col">Buy / sell</th><th scope="col">Amount</th><th scope="col">Quantity</th><th scope="col">Currency</th><th scope="col">Settlement date</th><th scope="col">Mismatch reason</th><th scope="col">Comment</th></tr></thead>
         <tbody>{draft.rows.map((row) => <tr key={row.tradeId}><td>{row.tradeId}</td><td>{row.isin}</td><td>{row.buySell}</td><td>{formatDecimal(row.amount)}</td><td>{formatDecimal(row.quantity)}</td><td>{row.currency}</td><td>{formatDate(row.settlementDate)}</td><td>{row.mismatchReason.replaceAll('-', ' ')}</td><td>{row.comment ?? '—'}</td></tr>)}</tbody>
       </table>

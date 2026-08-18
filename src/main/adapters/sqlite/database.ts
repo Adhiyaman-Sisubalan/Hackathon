@@ -249,8 +249,8 @@ export class SqliteDatabase {
       ORDER BY results.rowid ASC`).all(runId, selected.brokerName, selected.brokerRecipient) as unknown as BrokerPreviewRow[];
     return BrokerEmailDraftSchema.parse({
       status: 'Draft', brokerName: selected.brokerName, recipient: selected.brokerRecipient,
-      subject: `Follow-up: unmatched trades for ${selected.brokerName}`,
-      body: `Dear ${selected.brokerName} Operations,\n\nPlease review the unmatched trades listed below and confirm the appropriate resolution.\n\nKind regards,\nReconciliation Operations`,
+      subject: `Follow-up: mismatched trades for ${selected.brokerName}`,
+      body: `Dear ${selected.brokerName} Operations,\n\nPlease review the mismatched trades listed below and confirm the appropriate resolution.\n\nKind regards,\nReconciliation Operations`,
       rows
     });
   }

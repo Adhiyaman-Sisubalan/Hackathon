@@ -31,7 +31,7 @@ describe('RunComposition', () => {
   it('names the composition for assistive technology without claiming a live region', () => {
     render(<RunComposition summary={summary} />);
     expect(screen.getByRole('img').getAttribute('aria-label'))
-      .toBe('Reconciliation run composition. 6 results: 2 matched, 2 unmatched, 1 missing from broker, 1 missing from ot/murex.');
+      .toBe('Reconciliation run composition. 6 results: 2 matched, 2 mismatched, 1 missing from broker, 1 missing from ot/murex.');
     // The strip's anomaly message owns the only status region; the chart must not add one.
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -40,8 +40,8 @@ describe('RunComposition', () => {
     const allMatched = { ...summary, metrics: { total: 2, matched: 2, unresolved: 0, reconciliationRate: 1, unresolvedRate: 0 }, statusCounts: { matched: 2, unmatched: 0, 'missing-from-broker': 0, 'missing-from-ot-murex': 0 } };
     const { container } = render(<RunComposition summary={allMatched} />);
     expect(container.querySelectorAll('svg circle[data-status]')).toHaveLength(1);
-    expect(within(breakdownRowFor('Unmatched')).getByText('0')).toBeTruthy();
-    expect(within(breakdownRowFor('Unmatched')).getByText('0.0%')).toBeTruthy();
+    expect(within(breakdownRowFor('Mismatched')).getByText('0')).toBeTruthy();
+    expect(within(breakdownRowFor('Mismatched')).getByText('0.0%')).toBeTruthy();
   });
 
   it('draws a zero-result run as an empty track without dividing by zero', () => {
@@ -51,7 +51,7 @@ describe('RunComposition', () => {
     expect(container.textContent).not.toContain('NaN');
     // Four zero shares in the breakdown, plus the zero rate in the centre.
     expect(screen.getAllByText('0.0%')).toHaveLength(5);
-    for (const label of ['Matched', 'Unmatched', 'Missing from Broker', 'Missing from OT/MUREX']) {
+    for (const label of ['Matched', 'Mismatched', 'Missing from Broker', 'Missing from OT/MUREX']) {
       expect(within(breakdownRowFor(label)).getByText('0.0%')).toBeTruthy();
     }
   });

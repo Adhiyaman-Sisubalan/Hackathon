@@ -145,7 +145,7 @@ export function installMockBridge(): void {
       reviewResult(runId, resultId) {
         const outcome = mutate(runId, resultId, (result) => ({ ...result, reviewed: true }), (result) => result.status === 'unmatched');
         if (outcome.outcome === 'saved') return ok({ workspace: outcome.workspace });
-        if (outcome.outcome === 'not-eligible') return fail('INVALID_REQUEST', 'Only unmatched results can be reviewed.', 'resultId');
+        if (outcome.outcome === 'not-eligible') return fail('INVALID_REQUEST', 'Only mismatched results can be reviewed.', 'resultId');
         return fail('RESULT_NOT_FOUND', 'This result is no longer available.');
       },
       saveComment(runId, resultId, comment) {
@@ -177,8 +177,8 @@ export function installMockBridge(): void {
           }));
         const draft: BrokerEmailDraft = {
           status: 'Draft', brokerName: contact.name, recipient: contact.recipient,
-          subject: `Follow-up: unmatched trades for ${contact.name}`,
-          body: `Dear ${contact.name} Operations,\n\nPlease review the unmatched trades listed below and confirm the appropriate resolution.\n\nKind regards,\nReconciliation Operations`,
+          subject: `Follow-up: mismatched trades for ${contact.name}`,
+          body: `Dear ${contact.name} Operations,\n\nPlease review the mismatched trades listed below and confirm the appropriate resolution.\n\nKind regards,\nReconciliation Operations`,
           rows
         };
         return ok({ draft });
@@ -188,7 +188,7 @@ export function installMockBridge(): void {
         if (!run) return fail('RUN_NOT_FOUND', 'This run is no longer available.');
         const unmatched = run.results.filter((result) => result.status === 'unmatched');
         const outstanding = unmatched.length - unmatched.filter((result) => result.reviewed).length;
-        if (outstanding > 0) return fail('REPORT_INELIGIBLE', `${outstanding} unmatched results remain to review before saving the verified report.`);
+        if (outstanding > 0) return fail('REPORT_INELIGIBLE', `${outstanding} mismatched results remain to review before saving the verified report.`);
         // No workbook is written in the browser preview; the desktop build produces the real file.
         return ok({ destination: `/mock-output/reconciliation-${run.asOfDate}-${run.runId}.xlsx (browser preview — no file written)` });
       }
